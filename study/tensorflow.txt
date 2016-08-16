@@ -1,0 +1,28 @@
+"지적 대화를 위한 깊고 넓은 딥러닝" 발표의 슬라이드와 제가 구현한 텐서플로우 코드들을 공유합니다. 텐서플로우를 공부하시는 데 도움이 되셨으면 좋겠습니다 :)
+1. 이미지(사람의 얼굴 사진)을 이해하고 스스로 만드는 모델
+http://carpedm20.github.io/faces/
+https://github.com/carpedm20/DCGAN-tensorflow
+2. Atari 게임을 화면의 픽셀만 보고 배우는 모델
+https://github.com/devsisters/DQN-tensorflow/
+3. 이미지 버전의 '왕 - 남자 + 여자 = 여왕'
+https://github.com/carpedm20/visual-analogy-tensorflow
+4. 뉴럴 네트워크로 만든 튜링 머신
+https://github.com/carpedm20/NTM-tensorflow
+5. 강화 학습 모델들
+https://github.com/carpedm20/deep-rl-tensorflow/
+6. 픽셀을 하나씩 예측하며 이미지를 만드는 모델
+https://github.com/carpedm20/pixel-rnn-tensorflow
+7. Question Answering, Language Model
+https://github.com/carpedm20/MemN2N-tensorflow
+8. Character-level Language Models
+https://github.com/carpedm20/lstm-char-cnn-tensorflow
+9. Teaching Machines to Read and Comprehend
+https://github.com/carpedm20/attentive-reader-tensorflow
+10. Neural Variational Inference for Text Processing
+https://github.com/carpedm20/variational-text-tensorflow
+11. Text-based Games using Deep Reinforcement Learning
+https://github.com/carpedm20/text-based-game-rl-tensorflow
+12. Continuous Deep Q-Learning with Normalized Advantage Functions
+https://github.com/carpedm20/NAF-tensorflow
+발표 슬라이드: http://www.slideshare.net/carpedm20/pycon-korea-2016
+‪#‎PyConAPAC2016‬
