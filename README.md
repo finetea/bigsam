@@ -1,5 +1,5 @@
 # bigsam
-data anlysis for bigcon korea
+data anlysis for team training
 
 
 
