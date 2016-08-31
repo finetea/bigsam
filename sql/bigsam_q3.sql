@@ -1,0 +1,1 @@
+select a.* from contract_data as a left join customer_data as b on (a.CUST_ID = b.CUST_ID and b.SIU_CUST_YN='Y');
