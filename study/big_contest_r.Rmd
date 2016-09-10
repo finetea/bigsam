@@ -1,0 +1,774 @@
+---
+title: "보험 사기 예측"
+author: "윤지환"
+date: "2016년 9월 1일"
+output: html_document
+---
+
+# 보험사기예측
+#### 업데이트 사항
+
+  * 골절과 관련된 증상 및 사기 연관성이 높은 특정 병명이 있는 것으로 파악 
+    * M,Q,G 뼈, 선천적 기형, 뇌 및 신경계통
+    * 병명 sheet가 정리되어 있는 사이트 http://wpwsyn.tistory.com/152  상병기호와 CLAIM의 RESL_CD1과 동일하게 mapping
+  * *DATE변수가 영향을 미칠것으로 예상되어 YEAR 요약변수 생성 검증
+  
+
+```{r}
+#Set path
+setwd("C:\\workspace_r\\insurance\\")
+
+# CSV Raw Data 불러오기
+BGCON_CLAIM_DATA <- read.csv("data/BGCON_CLAIM_DATA.csv")
+BGCON_CNTT_DATA <- read.csv("data/BGCON_CNTT_DATA.csv")
+BGCON_CUST_DATA <- read.csv("data/BGCON_CUST_DATA.csv") # 기준 데이터
+BGCON_FMLY_DATA <- read.csv("data/BGCON_FMLY_DATA.csv")
+BGCON_FPINFO_DATA <- read.csv("data/BGCON_FPINFO_DATA.csv")
+
+# 동일한 Level의 필드를 가진 데이터 Bind
+BGCON_FMLY_DATA$SIU_CUST_YN <- NULL
+BGCON_FPINFO_DATA$SIU_CUST_YN <- NULL
+BGCON_CUST_FMLY_DATA <- merge(x = BGCON_CUST_DATA, y = BGCON_FMLY_DATA, by = 'CUST_ID', all = TRUE)
+BGCON_CNTT_FPINFO_DATA <- merge(x = BGCON_CNTT_DATA, y = BGCON_FPINFO_DATA, by = 'CLLT_FP_PRNO', all = TRUE)
+
+
+# SIU_CUST_YN 필드가 비어 있는 데이터(=Test Data)는 제거하고 시작
+BGCON_CLAIM_DATA.df <- BGCON_CLAIM_DATA[!(BGCON_CLAIM_DATA$SIU_CUST_YN == ""),]
+BGCON_CUST_FMLY_DATA.df <- BGCON_CUST_FMLY_DATA[!(BGCON_CUST_FMLY_DATA$SIU_CUST_YN == ""),]
+BGCON_CNTT_FPINFO_DATA.df <- BGCON_CNTT_FPINFO_DATA[!(BGCON_CNTT_FPINFO_DATA$SIU_CUST_YN == ""),]
+
+BGCON_CLAIM_DATA.df$SIU_CUST_YN <- factor(BGCON_CLAIM_DATA.df$SIU_CUST_YN)
+BGCON_CLAIM_DATA.df$HOSP_SPEC_DVSN <- factor(BGCON_CLAIM_DATA.df$HOSP_SPEC_DVSN)
+BGCON_CLAIM_DATA.df$ACCI_DVSN <- factor(BGCON_CLAIM_DATA.df$ACCI_DVSN)
+BGCON_CLAIM_DATA.df$CRNT_PROG_DVSN <- factor(BGCON_CLAIM_DATA.df$CRNT_PROG_DVSN)
+
+BGCON_CUST_FMLY_DATA.df$SIU_CUST_YN <- factor(BGCON_CUST_FMLY_DATA.df$SIU_CUST_YN)
+BGCON_CUST_FMLY_DATA.df$RESI_TYPE_CODE <- factor(BGCON_CUST_FMLY_DATA.df$RESI_TYPE_CODE)
+BGCON_CUST_FMLY_DATA.df$MINCRDT <- factor(BGCON_CUST_FMLY_DATA.df$MINCRDT)
+BGCON_CUST_FMLY_DATA.df$MAXCRDT <- factor(BGCON_CUST_FMLY_DATA.df$MAXCRDT)
+
+BGCON_CNTT_FPINFO_DATA.df$SIU_CUST_YN <- factor(BGCON_CNTT_FPINFO_DATA.df$SIU_CUST_YN)
+BGCON_CNTT_FPINFO_DATA.df$CNTT_STAT_CODE <- factor(BGCON_CNTT_FPINFO_DATA.df$CNTT_STAT_CODE)
+BGCON_CNTT_FPINFO_DATA.df$PAYM_CYCL_CODE <- factor(BGCON_CNTT_FPINFO_DATA.df$PAYM_CYCL_CODE)
+BGCON_CNTT_FPINFO_DATA.df$SALE_CHNL_CODE <- factor(BGCON_CNTT_FPINFO_DATA.df$SALE_CHNL_CODE)
+BGCON_CNTT_FPINFO_DATA.df$GOOD_CLSF_CDNM <- factor(BGCON_CNTT_FPINFO_DATA.df$GOOD_CLSF_CDNM)
+
+
+```
+
+
+####요약 변수 추가
+
+  * YEAR 관련 변수 추가
+
+```{r}
+
+BGCON_CLAIM_DATA.df$RECP_DATE_YEAR <- as.numeric(format(as.Date(as.character(BGCON_CLAIM_DATA.df$RECP_DATE), format = "%Y%m%d"), "%Y"))
+BGCON_CLAIM_DATA.df$ORIG_RESN_DATE_YEAR <- as.numeric(format(as.Date(as.character(BGCON_CLAIM_DATA.df$ORIG_RESN_DATE), format = "%Y%m%d"), "%Y"))
+BGCON_CLAIM_DATA.df$RESN_DATE_YEAR <- as.numeric(format(as.Date(as.character(BGCON_CLAIM_DATA.df$RESN_DATE), format = "%Y%m%d"), "%Y"))
+BGCON_CLAIM_DATA.df$PAYM_DATE_YEAR <- as.numeric(format(as.Date(as.character(BGCON_CLAIM_DATA.df$PAYM_DATE), format = "%Y%m%d"), "%Y"))
+
+
+BGCON_CUST_FMLY_DATA.df$CUST_RGST_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_CUST_FMLY_DATA.df$CUST_RGST), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+BGCON_CUST_FMLY_DATA.df$MAX_PAYM_YM_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_CUST_FMLY_DATA.df$MAX_PAYM_YM), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+
+
+BGCON_CNTT_FPINFO_DATA.df$CNTT_YM_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_CNTT_FPINFO_DATA.df$CNTT_YM), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+BGCON_CNTT_FPINFO_DATA.df$EXPR_YM_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_CNTT_FPINFO_DATA.df$EXPR_YM), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+BGCON_CNTT_FPINFO_DATA.df$EXTN_YM_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_CNTT_FPINFO_DATA.df$EXTN_YM), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+BGCON_CNTT_FPINFO_DATA.df$LAPS_YM_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_CNTT_FPINFO_DATA.df$LAPS_YM), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+BGCON_CNTT_FPINFO_DATA.df$ETRS_YM_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_CNTT_FPINFO_DATA.df$ETRS_YM), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+BGCON_CNTT_FPINFO_DATA.df$FIRE_YM_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_CNTT_FPINFO_DATA.df$FIRE_YM), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+
+
+```
+
+  * 각 YEAR 변수의 중앙 YEAR를 만들어줌
+
+```{r}
+median(BGCON_CLAIM_DATA.df[which(BGCON_CLAIM_DATA.df$CUST_ID == 8170), "PAYM_DATE_YEAR"])
+median(BGCON_CLAIM_DATA.df[which(BGCON_CLAIM_DATA.df$CUST_ID == 3878) && !is.na(BGCON_CLAIM_DATA.df$RECP_DATE_YEAR), "RECP_DATE_YEAR"])
+median(BGCON_CLAIM_DATA.df[!is.na(BGCON_CLAIM_DATA.df$ORIG_RESN_DATE_YEAR), "ORIG_RESN_DATE_YEAR"])
+median(BGCON_CLAIM_DATA.df[!is.na(BGCON_CLAIM_DATA.df$RESN_DATE_YEAR), "RESN_DATE_YEAR"])
+median(BGCON_CLAIM_DATA.df[!is.na(BGCON_CLAIM_DATA.df$PAYM_DATE_YEAR), "PAYM_DATE_YEAR"])
+
+median(BGCON_CUST_FMLY_DATA.df[!is.na(BGCON_CUST_FMLY_DATA.df$CUST_RGST_YEAR), "CUST_RGST_YEAR"])
+median(BGCON_CUST_FMLY_DATA.df[!is.na(BGCON_CUST_FMLY_DATA.df$MAX_PAYM_YM_YEAR), "MAX_PAYM_YM_YEAR"])
+
+median(BGCON_CNTT_FPINFO_DATA.df[!is.na(BGCON_CNTT_FPINFO_DATA.df$CNTT_YM_YEAR), "CNTT_YM_YEAR"])
+median(BGCON_CNTT_FPINFO_DATA.df[!is.na(BGCON_CNTT_FPINFO_DATA.df$EXPR_YM_YEAR), "EXPR_YM_YEAR"])
+median(BGCON_CNTT_FPINFO_DATA.df[!is.na(BGCON_CNTT_FPINFO_DATA.df$EXTN_YM_YEAR), "EXTN_YM_YEAR"])
+median(BGCON_CNTT_FPINFO_DATA.df[!is.na(BGCON_CNTT_FPINFO_DATA.df$LAPS_YM_YEAR), "LAPS_YM_YEAR"])
+median(BGCON_CNTT_FPINFO_DATA.df[!is.na(BGCON_CNTT_FPINFO_DATA.df$ETRS_YM_YEAR), "ETRS_YM_YEAR"])
+median(BGCON_CNTT_FPINFO_DATA.df[!is.na(BGCON_CNTT_FPINFO_DATA.df$FIRE_YM_YEAR), "FIRE_YM_YEAR"])
+```
+
+
+  * 병명의 앞 글자만 추출하여 변수 추가
+
+```{r}
+
+BGCON_CLAIM_DATA.df$CAUS_CODE_FIRST <- substring(BGCON_CLAIM_DATA.df$CAUS_CODE, 1, 1)
+BGCON_CLAIM_DATA.df$RESL_CD1_FIRST <- substring(BGCON_CLAIM_DATA.df$RESL_CD1, 1, 1)
+
+```
+
+  * Numeric 관련 요약변수 생성
+
+```{r}
+#다른 필드의 값을 Sum 하여 df1 필드에 채워줌
+merge_after_aggregate <- function(df1, df2, by, t_col, c_col){
+  agg_df_temp <- aggregate(df2[, t_col], by=list(df2[, by]), FUN=sum)
+  colnames(agg_df_temp) <- c(by, c_col)
+  ret_df <- merge(x = df1, y = agg_df_temp, by = by, all=TRUE)
+  return (ret_df)
+}
+
+BGCON_CUST_FMLY_DATA.df <- merge_after_aggregate(BGCON_CUST_FMLY_DATA.df, BGCON_CLAIM_DATA.df, "CUST_ID", "VLID_HOSP_OTDA", "VLID_HOSP_OTDA_TOTAL")
+BGCON_CUST_FMLY_DATA.df <- merge_after_aggregate(BGCON_CUST_FMLY_DATA.df, BGCON_CLAIM_DATA.df, "CUST_ID", "HOUSE_HOSP_DIST", "HOUSE_HOSP_DIST_TOTAL")
+BGCON_CUST_FMLY_DATA.df <- merge_after_aggregate(BGCON_CUST_FMLY_DATA.df, BGCON_CLAIM_DATA.df, "CUST_ID", "DMND_AMT", "DMND_AMT_TOTAL")
+BGCON_CUST_FMLY_DATA.df <- merge_after_aggregate(BGCON_CUST_FMLY_DATA.df, BGCON_CLAIM_DATA.df, "CUST_ID", "PAYM_AMT", "PAYM_AMT_TOTAL")
+BGCON_CUST_FMLY_DATA.df <- merge_after_aggregate(BGCON_CUST_FMLY_DATA.df, BGCON_CLAIM_DATA.df, "CUST_ID", "SELF_CHAM", "SELF_CHAM_TOTAL")
+BGCON_CUST_FMLY_DATA.df <- merge_after_aggregate(BGCON_CUST_FMLY_DATA.df, BGCON_CLAIM_DATA.df, "CUST_ID", "NON_PAY", "NON_PAY_TOTAL")
+BGCON_CUST_FMLY_DATA.df <- merge_after_aggregate(BGCON_CUST_FMLY_DATA.df, BGCON_CLAIM_DATA.df, "CUST_ID", "TAMT_SFCA", "TAMT_SFCA_TOTAL")
+BGCON_CUST_FMLY_DATA.df <- merge_after_aggregate(BGCON_CUST_FMLY_DATA.df, BGCON_CLAIM_DATA.df, "CUST_ID", "PATT_CHRG_TOTA", "PATT_CHRG_TOTA_TOTAL")
+BGCON_CUST_FMLY_DATA.df <- merge_after_aggregate(BGCON_CUST_FMLY_DATA.df, BGCON_CLAIM_DATA.df, "CUST_ID", "DSCT_AMT", "DSCT_AMT_TOTAL")
+BGCON_CUST_FMLY_DATA.df <- merge_after_aggregate(BGCON_CUST_FMLY_DATA.df, BGCON_CLAIM_DATA.df, "CUST_ID", "COUNT_TRMT_ITEM", "COUNT_TRMT_ITEM_TOTAL")
+
+
+BGCON_CUST_FMLY_DATA.df <- merge_after_aggregate(BGCON_CUST_FMLY_DATA.df, BGCON_CNTT_FPINFO_DATA.df, "CUST_ID", "REAL_PAYM_TERM", "REAL_PAYM_TERM_TOTAL")
+BGCON_CUST_FMLY_DATA.df <- merge_after_aggregate(BGCON_CUST_FMLY_DATA.df, BGCON_CNTT_FPINFO_DATA.df, "CUST_ID", "MAIN_INSR_AMT", "MAIN_INSR_AMT_TOTAL")
+BGCON_CUST_FMLY_DATA.df <- merge_after_aggregate(BGCON_CUST_FMLY_DATA.df, BGCON_CNTT_FPINFO_DATA.df, "CUST_ID", "SUM_ORIG_PREM", "SUM_ORIG_PREM_TOTAL")
+BGCON_CUST_FMLY_DATA.df <- merge_after_aggregate(BGCON_CUST_FMLY_DATA.df, BGCON_CNTT_FPINFO_DATA.df, "CUST_ID", "MNTH_INCM_AMT", "MNTH_INCM_AMT_TOTAL")
+BGCON_CUST_FMLY_DATA.df <- merge_after_aggregate(BGCON_CUST_FMLY_DATA.df, BGCON_CNTT_FPINFO_DATA.df, "CUST_ID", "DISTANCE", "DISTANCE_TOTAL")
+
+
+```
+
+
+
+
+```{r}
+
+# 데이터 셋 random reduced 
+suppressPackageStartupMessages({
+  library(caret)
+})
+
+set.seed(1234)
+BGCON_CLAIM_DATA.df.down <- downSample(x = BGCON_CLAIM_DATA.df, y = BGCON_CLAIM_DATA.df$SIU_CUST_YN)
+set.seed(1234)
+BGCON_CUST_FMLY_DATA.df.down <- downSample(x = BGCON_CUST_FMLY_DATA.df, y =  BGCON_CUST_FMLY_DATA.df$SIU_CUST_YN)
+set.seed(1234)
+BGCON_CNTT_FPINFO_DATA.df.down <- downSample(x = BGCON_CNTT_FPINFO_DATA.df, y = BGCON_CNTT_FPINFO_DATA.df$SIU_CUST_YN)
+
+
+# 불필요한 Raw Data 삭제
+rm(BGCON_CUST_DATA)
+rm(BGCON_FMLY_DATA)
+rm(BGCON_CNTT_DATA)
+rm(BGCON_FPINFO_DATA)
+
+```
+
+
+##EDA 수행
+
+
+```{r}
+
+#install.packages("Amelia")
+suppressPackageStartupMessages({
+  require(Amelia)
+})
+
+missmap(BGCON_CLAIM_DATA.df, main="Missings Map", col=c("yellow", "black"), legend=FALSE) 
+missmap(BGCON_CUST_FMLY_DATA.df, main="Missings Map", col=c("yellow", "black"), legend=FALSE)
+missmap(BGCON_CNTT_FPINFO_DATA.df, main="Missings Map", col=c("yellow", "black"), legend=FALSE)
+
+```
+
+  * 실효년월(LAPS_YM) 이 대부분 비어 있음
+  * 소멸년월(EXTN_YM) 많이 비어 있음
+  * FP와 고객간의거리(DISTANCE)는 일부 비어 있음
+
+  * MAXCRDT, MINCRDT는 중요한 factor로 보이지만 많은 데이터가 비어 있음
+
+```{r}
+
+#install.packages("Hmisc")
+suppressPackageStartupMessages({
+  library(Hmisc)
+})
+
+names(BGCON_CLAIM_DATA.df)
+
+summary(SIU_CUST_YN ~ ACCI_OCCP_GRP1 + ACCI_OCCP_GRP2 + CHANG_FP_YN + CRNT_PROG_DVSN + ACCI_DVSN + DMND_RESN_CODE + DMND_RSCD_SQNO + VLID_HOSP_OTDA + HOUSE_HOSP_DIST + ACCI_HOSP_ADDR + HOSP_SPEC_DVSN + DMND_AMT + PAYM_AMT + PMMI_DLNG_YN + SELF_CHAM + NON_PAY + TAMT_SFCA + PATT_CHRG_TOTA + DSCT_AMT + COUNT_TRMT_ITEM + DCAF_CMPS_XCPA + NON_PAY_RATIO + HEED_HOSP_YN, data = BGCON_CLAIM_DATA.df, method="reverse")
+
+```
+
+
+  * CLAIM 데이터의 경우, 보험처리건수로 여러개일 수 있기 때문에 중복 집계될 가능성이 높음
+  * 좀더 정확히 보기 위해, 보험처리건수별 아이디 한개로 제한해서 테스트 해야함
+
+  * 직업그룹코드1(ACCI_OCCP_GRP1)
+    * 1.주부인 경우 6% 더 높음
+    * 자영업 경우 6% 더 높음
+    * 서비스직인 경우 3% 더 높음
+    * 전문직인 경우 3% 더 낮음
+    * 제조업인 경우 3% 더 낮음
+  
+  * 직업그룹코드2(ACCI_OCCP_GRP2)
+    * 3차산업 종사자 경우 5% 더 높음
+    * 1차산업종사자 1%, 2차산업종사자 3% 더 낮음
+    * 자영업 경우 5% 더 높음
+    * 주부 경우 6% 더 높음
+    * 법무직 종사자의 경우 사기건수 미존재
+    * 고소득 전문직의 경우 사기건수 미존재
+  
+  * 청구사유 코드(DMND_RESN_CODE)
+    * 02(입원)이 유의미하게 높음 23%
+    * 대신 수술(05)는 절반정도 낮음
+  
+  * 실소처리여부(PMMI_DLNG_YN)은 현격하게 낮음 15%
+  
+  * 금감원 유의병원 대상(HEED_HOSP_YN)유의 병원인 경우가 2%더 높음
+  
+  * 병원종별구분(HOSP_SPEC_DVSN)에서
+    * 한방병원(80) 8%, 의료기관이외(95) 7%로 유의미 하게 높음
+    * 종합병원(10) 20%로 유의미 하게 낮음
+  
+  * 유효입원/통원일수(VLID_HOSP_OTDA) 최소, 평균, 최대 모두 높게 나옴
+
+  * 뉴스기사 : 지난해 보험사기 적발 6549억원…사상 최대
+    * 위 뉴스기사와 비슷한 결과를 보이는 factor들이 많이 존재
+    * 주부, 자영업의 직업군 영향이 높
+  
+  
+```{r}
+  
+summary(SIU_CUST_YN ~ ., data = BGCON_CUST_FMLY_DATA.df, method="reverse")
+  
+```
+
+  * FP경력(FP_CAREER)이 5% 더 높음 하지만, 모수가 많지 않음
+
+  * 신용등급_최소(MINCRDT)의 경우 7등급 이하의 하위가 더 높음
+  * 신용등급_최대(MAXCRDT)의 경우 7등급 이하의 하위가 더 높음
+
+  * 결혼여부(WEDD_YN) 결혼한 경우가 4% 더 높음
+
+  * FMLY_RELN_CODE 형제 자매의 관계에서 사기로 분류된 경우가 많음, 가족 아이디로 엮인 부분이 더 많음
+
+```{r}
+
+summary(SIU_CUST_YN ~ CUST_ROLE + IRKD_CODE_DTAL + IRKD_CODE_ITEM + GOOD_CLSF_CDNM + REAL_PAYM_TERM + SALE_CHNL_CODE + CNTT_STAT_CODE + PAYM_CYCL_CODE + MAIN_INSR_AMT + SUM_ORIG_PREM + RECP_PUBL + CNTT_RECP + MNTH_INCM_AMT + DISTANCE + INCB_DVSN + BEFO_JOB + EDGB + BRCH_CODE, data = BGCON_CNTT_FPINFO_DATA.df, method="reverse")
+
+```
+
+
+##상관분석
+
+
+```{r}
+# 상관분석
+#install.packages("corrgram")
+#install.packages("plyr")
+suppressPackageStartupMessages({
+  require(corrgram)
+  require(plyr)
+})
+
+#####BGCON_CLAIM_DATA.df
+corrgram.data <- BGCON_CLAIM_DATA.df.down
+names(corrgram.data)
+
+
+## change features of factor type to numeric type for inclusion on correlogram
+corrgram.data$SIU_CUST_YN <- as.numeric(corrgram.data$SIU_CUST_YN)
+corrgram.data$ACCI_OCCP_GRP1 <- as.numeric(corrgram.data$ACCI_OCCP_GRP1)
+corrgram.data$ACCI_OCCP_GRP2 <- as.numeric(corrgram.data$ACCI_OCCP_GRP2)
+corrgram.data$CHANG_FP_YN <- as.numeric(corrgram.data$CHANG_FP_YN)
+corrgram.data$ACCI_DVSN <- as.numeric (corrgram.data$ACCI_DVSN)
+corrgram.data$CAUS_CODE <- as.numeric (corrgram.data$CAUS_CODE)
+corrgram.data$CAUS_CODE_DTAL <- as.numeric (corrgram.data$CAUS_CODE_DTAL)
+corrgram.data$RESL_CD1 <- as.numeric (corrgram.data$RESL_CD1)
+corrgram.data$RESL_NM1 <- as.numeric (corrgram.data$RESL_NM1)
+corrgram.data$ACCI_HOSP_ADDR <- as.numeric (corrgram.data$ACCI_HOSP_ADDR)
+corrgram.data$PMMI_DLNG_YN <- as.numeric (corrgram.data$PMMI_DLNG_YN)
+corrgram.data$HEED_HOSP_YN <- as.numeric (corrgram.data$HEED_HOSP_YN)
+corrgram.data$CAUS_CODE_FIRST <- as.numeric (factor(corrgram.data$CAUS_CODE_FIRST))
+corrgram.data$RESL_CD1_FIRST <- as.numeric (factor(corrgram.data$RESL_CD1_FIRST))
+
+## generate correlogram : 피어슨 상관계수 계산
+corrgram.vars <- c("SIU_CUST_YN", "ACCI_OCCP_GRP1", "ACCI_OCCP_GRP2", "CHANG_FP_YN", "ACCI_DVSN", "CNTT_RECP_SQNO", "RECP_DATE", "ORIG_RESN_DATE", "RESN_DATE","CRNT_PROG_DVSN","ACCI_DVSN","CAUS_CODE","CAUS_CODE_DTAL")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+corrgram.vars <- c("SIU_CUST_YN", "DSAS_NAME", "DMND_RESN_CODE", "DMND_RSCD_SQNO", "HOSP_OTPA_STDT", "HOSP_OTPA_ENDT", "RESL_CD1", "RESL_NM1","VLID_HOSP_OTDA","HOUSE_HOSP_DIST","HOSP_CODE","ACCI_HOSP_ADDR")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+corrgram.vars <- c("SIU_CUST_YN", "HOSP_SPEC_DVSN", "CHME_LICE_NO", "PAYM_DATE", "DMND_AMT", "PAYM_AMT", "PMMI_DLNG_YN")
+#, "SELF_CHAM", "NON_PAY", "TAMT_SFCA","PATT_CHRG_TOTA","DSCT_AMT") #표준편차 0으로 에러 발생
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+corrgram.vars <- c("SIU_CUST_YN", "DCAF_CMPS_XCPA", "COUNT_TRMT_ITEM", "NON_PAY_RATIO", "HEED_HOSP_YN")
+#, "DCAF_CMPS_XCPA", "NON_PAY_RATIO", "HEED_HOSP_YN", "SUB_CUST_ID", "FMLY_RELN_CODE") #표준편차 0으로 에러 발생
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+
+#### 추가분
+corrgram.vars <- c("SIU_CUST_YN", "RECP_DATE_YEAR", "ORIG_RESN_DATE_YEAR", "RESN_DATE_YEAR", "PAYM_DATE_YEAR", "CAUS_CODE_FIRST", "RESL_CD1_FIRST")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+
+
+#####BGCON_CUST_DATA.df
+corrgram.data <- BGCON_CUST_FMLY_DATA.df.down
+names(corrgram.data)
+
+## change features of factor type to numeric type for inclusion on correlogram
+corrgram.data$SIU_CUST_YN <- as.numeric(corrgram.data$SIU_CUST_YN)
+corrgram.data$FP_CAREER <- as.numeric(corrgram.data$FP_CAREER)
+corrgram.data$CTPR <- as.numeric(corrgram.data$CTPR)
+corrgram.data$OCCP_GRP_1 <- as.numeric (corrgram.data$OCCP_GRP_1)
+corrgram.data$OCCP_GRP_2 <- as.numeric (corrgram.data$OCCP_GRP_2)
+corrgram.data$WEDD_YN <- as.numeric (corrgram.data$WEDD_YN)
+corrgram.data$MATE_OCCP_GRP_1 <- as.numeric (corrgram.data$MATE_OCCP_GRP_1)
+corrgram.data$MATE_OCCP_GRP_2 <- as.numeric (corrgram.data$MATE_OCCP_GRP_2)
+
+
+## generate correlogram : 피어슨 상관계수 계산
+corrgram.vars <- c("SIU_CUST_YN",  "SEX",  "AGE",  "RESI_COST", "CTPR", "OCCP_GRP_1", "OCCP_GRP_2", "TOTALPREM")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+
+corrgram.vars <- c("SIU_CUST_YN", "MINCRDT", "MAXCRDT", "WEDD_YN", "MATE_OCCP_GRP_1", "MATE_OCCP_GRP_2", "CHLD_CNT", "LTBN_CHLD_AGE", "MAX_PAYM_YM", "MAX_PRM", "CUST_INCM", "RCBASE_HSHD_INCM", "JPBASE_HSHD_INCM", "FMLY_RELN_CODE")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+
+#### 추가분
+corrgram.vars <- c("SIU_CUST_YN", "CUST_RGST_YEAR", "MAX_PAYM_YM_YEAR")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+#### 요건 변수 추가분
+corrgram.vars <- c("SIU_CUST_YN", "VLID_HOSP_OTDA_TOTAL", "HOUSE_HOSP_DIST_TOTAL", "DMND_AMT_TOTAL", "PAYM_AMT_TOTAL", "SELF_CHAM_TOTAL", "NON_PAY_TOTAL", "TAMT_SFCA_TOTAL", "PATT_CHRG_TOTA_TOTAL", "DSCT_AMT_TOTAL", "COUNT_TRMT_ITEM_TOTAL", "REAL_PAYM_TERM_TOTAL", "MAIN_INSR_AMT_TOTAL", "SUM_ORIG_PREM_TOTAL", "MNTH_INCM_AMT_TOTAL")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+
+
+
+
+
+#####BGCON_CUST_DATA.df
+corrgram.data <- BGCON_CNTT_FPINFO_DATA.df.down
+names(corrgram.data)
+
+
+## change features of factor type to numeric type for inclusion on correlogram
+corrgram.data$SIU_CUST_YN <- as.numeric(corrgram.data$SIU_CUST_YN)
+corrgram.data$GOOD_CLSF_CDNM <- as.numeric(corrgram.data$GOOD_CLSF_CDNM)
+corrgram.data$CLLT_FP_PRNO <- as.numeric(corrgram.data$CLLT_FP_PRNO)
+corrgram.data$INCB_DVSN <- as.numeric(corrgram.data$INCB_DVSN)
+corrgram.data$ETRS_YM <- as.numeric(corrgram.data$ETRS_YM)
+corrgram.data$FIRE_YM <- as.numeric(corrgram.data$FIRE_YM)
+corrgram.data$BEFO_JOB <- as.numeric(corrgram.data$BEFO_JOB)
+corrgram.data$EDGB <- as.numeric(corrgram.data$EDGB)
+corrgram.data$BRCH_CODE <- as.numeric(corrgram.data$BRCH_CODE)
+
+## generate correlogram : 피어슨 상관계수 계산
+corrgram.vars <- c("SIU_CUST_YN", "POLY_NO", "CUST_ROLE", "IRKD_CODE_DTAL", "IRKD_CODE_ITEM", "GOOD_CLSF_CDNM", "CNTT_YM", "CLLT_FP_PRNO", "REAL_PAYM_TERM", "SALE_CHNL_CODE", "CNTT_STAT_CODE", "EXPR_YM")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+
+## generate correlogram : 피어슨 상관계수 계산
+corrgram.vars <- c("SIU_CUST_YN", "CLLT_FP_PRNO", "INCB_DVSN", "ETRS_YM", "FIRE_YM", "BEFO_JOB", "EDGB", "BRCH_CODE")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+
+#### 추가분
+corrgram.vars <- c("SIU_CUST_YN", "CNTT_YM_YEAR", "EXPR_YM_YEAR", "EXTN_YM_YEAR", "LAPS_YM_YEAR", "ETRS_YM_YEAR", "FIRE_YM_YEAR")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+```
+
+
+  * 데이터가 많기 때문에 p-value 계산으로 볼때 0.06 이상은 귀무가설 기각
+  * 상관분석에서 유의미하게 본 데이터들이 correlation이 높게 나옴
+
+
+## Feature Importance 확인을 위한 모델 테스트
+###CART(Classification And Regression Tree)
+###Logistic Regression
+
+  * ctree(Conditional Inference Tree)
+  * BGCON_CNTT_FPINFO_DATA.df.down
+  * train 16386, test 4096
+  * Accuracy 0.6787109 (2780/4096)
+
+  * BGCON_CUST_FMLY_DATA.df.down
+  * train 2962, test 740
+  * Accuracy 0.5851351 (433/740)
+
+```{r}
+#### column 별 Missing Data 갯수 출력
+#### missing data 출력해주는 함수
+print_missing_count <- function(df){
+  for (name in colnames(df)){
+    cat(name, "(", class(df[, name]), ")" , "====",  sum(is.na(df[, name])))
+    cat("\n")
+  }
+}
+print_missing_count(BGCON_CLAIM_DATA.df.down)
+print_missing_count(BGCON_CUST_FMLY_DATA.df.down)
+print_missing_count(BGCON_CNTT_FPINFO_DATA.df.down)
+
+```
+
+
+###Model Test
+####Logistic Regression
+
+  * Step wise를 이용하여 종속변수집단을 선택하였더니 정확도가 유의미하게 변하였음
+
+```
+#install.packages("rattle")
+#install.packages("rpart.plot")
+#install.packages("caret")
+suppressPackageStartupMessages({
+  library(rpart)
+  library(party)
+  library(caret)
+  library(pROC)
+})
+#memory.limit(100000)
+
+#입력할 데이터
+df.train <- BGCON_CUST_FMLY_DATA.df.down
+df.train$Class <- NULL
+
+set.seed(23)
+training.rows <- createDataPartition(df.train$SIU_CUST_YN,  p = 0.8, list = FALSE)
+train.batch <- df.train[training.rows, ]
+test.batch <- df.train[-training.rows, ]
+
+set.seed(23)
+step(glm(SIU_CUST_YN ~ + DIVIDED_SET + SEX + AGE + RESI_COST + FP_CAREER + CTPR + OCCP_GRP_1 + OCCP_GRP_2 + RCBASE_HSHD_INCM + VLID_HOSP_OTDA_TOTAL + DMND_AMT_TOTAL + PAYM_AMT_TOTAL + REAL_PAYM_TERM_TOTAL, data = train.batch, family=binomial("logit")))
+
+glm.tune.1 <- train(SIU_CUST_YN ~ RESI_COST + CTPR + OCCP_GRP_1 + VLID_HOSP_OTDA_TOTAL + PAYM_AMT_TOTAL
+                    ,data = train.batch
+                    ,method = "glm"
+                    ,metric = "ROC"  ## ROC 구체적으로는 AUC 가 최대가 되도록 최적화 하겠다는 의미임
+                    ,trControl = cv.ctrl)
+glm.tune.1
+summary(glm.tune.1)
+
+#### Model Evaluation
+glm.pred.1 <- predict(glm.tune.1, test.batch)
+confusionMatrix(glm.pred.1, test.batch$SIU_CUST_YN) 
+```
+
+```
+Call:
+NULL
+
+Deviance Residuals: 
+    Min       1Q   Median       3Q      Max  
+-6.1285  -0.8155  -0.0002   0.8389   2.3852  
+
+Coefficients:
+                       Estimate Std. Error z value Pr(>|z|)    
+(Intercept)          -2.834e+00  5.005e-01  -5.661 1.50e-08 ***
+RESI_COST            -1.198e-05  3.577e-06  -3.350 0.000810 ***
+CTPR강원              1.908e+00  7.110e-01   2.684 0.007268 ** 
+CTPR경기              1.750e+00  6.704e-01   2.611 0.009041 ** 
+CTPR경남              1.140e+00  6.895e-01   1.654 0.098147 .  
+CTPR경북              1.684e+00  7.076e-01   2.380 0.017328 *  
+CTPR광주              2.588e+00  6.883e-01   3.760 0.000170 ***
+CTPR대구              1.188e+00  7.043e-01   1.687 0.091682 .  
+CTPR대전              2.992e+00  7.244e-01   4.131 3.62e-05 ***
+CTPR부산              2.196e+00  6.809e-01   3.225 0.001260 ** 
+CTPR서울              2.134e+00  6.745e-01   3.164 0.001555 ** 
+CTPR세종             -2.858e+00  5.148e+00  -0.555 0.578715    
+CTPR울산              1.179e+00  7.338e-01   1.606 0.108195    
+CTPR인천              2.432e+00  6.797e-01   3.578 0.000347 ***
+CTPR전남              1.655e+00  6.870e-01   2.408 0.016023 *  
+CTPR전북              1.848e+00  6.920e-01   2.670 0.007588 ** 
+CTPR제주             -1.291e+01  3.351e+02  -0.039 0.969277    
+CTPR충남              1.795e+00  7.173e-01   2.502 0.012342 *  
+CTPR충북              4.119e-01  7.802e-01   0.528 0.597543    
+OCCP_GRP_11.주부      1.823e-01  5.992e-01   0.304 0.760931    
+OCCP_GRP_12.자영업    4.184e-01  6.043e-01   0.692 0.488759    
+OCCP_GRP_13.사무직    1.854e-01  6.009e-01   0.309 0.757628    
+OCCP_GRP_14.전문직   -1.832e-01  6.185e-01  -0.296 0.767107    
+OCCP_GRP_15.서비스    1.114e-01  6.061e-01   0.184 0.854167    
+OCCP_GRP_16.제조업   -7.257e-01  6.300e-01  -1.152 0.249371    
+OCCP_GRP_17.1차산업  -9.806e-01  7.656e-01  -1.281 0.200223    
+OCCP_GRP_18.기타     -2.847e-01  6.020e-01  -0.473 0.636253    
+VLID_HOSP_OTDA_TOTAL  1.371e-02  7.428e-04  18.459  < 2e-16 ***
+PAYM_AMT_TOTAL        1.004e-08  4.681e-09   2.146 0.031894 *  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 4106.2  on 2961  degrees of freedom
+Residual deviance: 2937.8  on 2933  degrees of freedom
+AIC: 2995.8
+
+Number of Fisher Scoring iterations: 14
+```
+
+```
+Confusion Matrix and Statistics
+
+          Reference
+Prediction   N   Y
+         N 330 109
+         Y  40 261
+                                         
+               Accuracy : 0.7986 
+                 95% CI : (0.7679, 0.827)
+    No Information Rate : 0.5            
+    P-Value [Acc > NIR] : < 2.2e-16      
+                                         
+                  Kappa : 0.5973         
+ Mcnemar's Test P-Value : 2.536e-08      
+                                         
+            Sensitivity : 0.8919         
+            Specificity : 0.7054         
+         Pos Pred Value : 0.7517         
+         Neg Pred Value : 0.8671         
+             Prevalence : 0.5000         
+         Detection Rate : 0.4459         
+   Detection Prevalence : 0.5932         
+      Balanced Accuracy : 0.7986         
+                                         
+       'Positive' Class : N 
+
+```
+
+
+####SVM
+
+  * Logistic Regression 보다 성능이 떨어지는 것으로 보아 데이터의 특성이 특정 변수 필드에 걸려지는 Simple한 결과가 아닌것으로 보임
+    * Tree Based Model이 적합할 것으로 보임
+
+```
+
+#입력할 데이터
+df.train <- BGCON_CUST_FMLY_DATA.df.down
+df.train$Class <- NULL
+
+set.seed(23)
+training.rows <- createDataPartition(df.train$SIU_CUST_YN,  p = 0.8, list = FALSE)
+train.batch <- df.train[training.rows, ]
+test.batch <- df.train[-training.rows, ]
+
+
+#### SVM Model Train
+set.seed(23)
+svm.tune.1 <- train(SIU_CUST_YN ~ RESI_COST + CTPR + OCCP_GRP_1 + VLID_HOSP_OTDA_TOTAL + PAYM_AMT_TOTAL
+                    ,data = train.batch
+                    ,method = "svmRadial"
+                    ,tuneLength = 9
+                    ,preProcess = c("center", "scale")
+                    ,metric = "ROC"
+                    ,trControl = cv.ctrl)
+svm.tune.1
+summary(svm.tune.1)
+
+#### SVM Model Evaluation
+svm.pred.1 <- predict(svm.tune.1, test.batch)
+confusionMatrix(svm.pred.1, test.batch$SIU_CUST_YN) 
+```
+
+
+```
+Confusion Matrix and Statistics
+
+          Reference
+Prediction   N   Y
+         N 314 116
+         Y  56 254
+                                          
+               Accuracy : 0.7676          
+                 95% CI : (0.7354, 0.7976)
+    No Information Rate : 0.5             
+    P-Value [Acc > NIR] : < 2.2e-16       
+                                          
+                  Kappa : 0.5351          
+ Mcnemar's Test P-Value : 6.837e-06       
+                                          
+            Sensitivity : 0.8486          
+            Specificity : 0.6865          
+         Pos Pred Value : 0.7302          
+         Neg Pred Value : 0.8194          
+             Prevalence : 0.5000          
+         Detection Rate : 0.4243          
+   Detection Prevalence : 0.5811          
+      Balanced Accuracy : 0.7676          
+                                          
+       'Positive' Class : N    
+```
+
+#### CART 
+
+  * tree 기반 테스트
+  
+
+```
+suppressPackageStartupMessages({
+  library(rattle)
+})
+
+#입력할 데이터
+df.train <- BGCON_CUST_FMLY_DATA.df.down
+df.train$Class <- NULL
+
+set.seed(23)
+training.rows <- createDataPartition(df.train$SIU_CUST_YN,  p = 0.8, list = FALSE)
+train.batch <- df.train[training.rows, ]
+test.batch <- df.train[-training.rows, ]
+
+#rpart
+set.seed(23)
+rpart.tune.1 <- train(SIU_CUST_YN ~ + SEX + AGE + RESI_COST + FP_CAREER + CTPR + OCCP_GRP_1 + OCCP_GRP_2 + RCBASE_HSHD_INCM + VLID_HOSP_OTDA_TOTAL + DMND_AMT_TOTAL + PAYM_AMT_TOTAL + REAL_PAYM_TERM_TOTAL
+                      ,data = train.batch
+                      ,method="rpart")
+rpart.tune.1
+summary(rpart.tune.1)
+plot(rpart.tune.1)
+fancyRpartPlot(rpart.tune.1$finalModel)
+
+####Model Evaluation
+rpart.pred.1 <- predict(rpart.tune.1, test.batch)
+confusionMatrix(rpart.tune.1, test.batch$SIU_CUST_YN) 
+
+
+
+#ctree를 이용해서 트리 분류
+model_ctree.1 <- ctree(SIU_CUST_YN ~ + DIVIDED_SET + SEX + AGE + RESI_COST + FP_CAREER + CTPR + OCCP_GRP_1 + OCCP_GRP_2 + RCBASE_HSHD_INCM + VLID_HOSP_OTDA_TOTAL + DMND_AMT_TOTAL + PAYM_AMT_TOTAL + REAL_PAYM_TERM_TOTAL, data = train.batch)
+
+model_ctree.1
+summary(model_ctree.1)
+plot(model_ctree.1)
+
+```
+
+
+#### random forest
+
+
+```
+
+#### Custom parameter setup
+customRF <- list(type = "Classification", library = "randomForest", loop = NULL)
+customRF$parameters <- data.frame(parameter = c("mtry", "ntree"), class = rep("numeric", 2), label = c("mtry", "ntree"))
+customRF$grid <- function(x, y, len = NULL, search = "grid") {}
+customRF$fit <- function(x, y, wts, param, lev, last, weights, classProbs, ...) {
+  randomForest(x, y, mtry = param$mtry, ntree=param$ntree, ...)
+}
+customRF$predict <- function(modelFit, newdata, preProc = NULL, submodels = NULL)
+   predict(modelFit, newdata)
+customRF$prob <- function(modelFit, newdata, preProc = NULL, submodels = NULL)
+   predict(modelFit, newdata, type = "prob")
+customRF$sort <- function(x) x[order(x[,1]),]
+customRF$levels <- function(x) x$classes
+
+
+#입력할 데이터
+df.train <- BGCON_CUST_FMLY_DATA.df.down
+df.train$Class <- NULL
+
+set.seed(23)
+training.rows <- createDataPartition(df.train$SIU_CUST_YN,  p = 0.8, list = FALSE)
+train.batch <- df.train[training.rows, ]
+test.batch <- df.train[-training.rows, ]
+
+#mtry : 노드를 나눌 기준을 정할 때 고려할 변수
+#ntree : 각 트리가 생성할 갯수
+rf.grid <- expand.grid(mtry=c(16), ntree=c(7000)) 
+
+#### RF Model Train
+set.seed(23)
+rf.tune.1 <- train(SIU_CUST_YN ~ RESI_COST + CTPR + OCCP_GRP_1 + VLID_HOSP_OTDA_TOTAL + PAYM_AMT_TOTAL
+                    ,data = train.batch
+                    ,method = customRF
+                    ,metric = "ROC"
+                    ,tuneGrid = rf.grid
+                    ,trControl = cv.ctrl)
+rf.tune.1
+summary(rf.tune.1)
+plot(rf.tune.1)
+
+#### Model Evaluation
+svm.pred.1 <- predict(rf.tune.1, test.batch)
+confusionMatrix(rf.pred.1, test.batch$SIU_CUST_YN)
+```
+
+
+#### random forest based Feature Importance Plot
+
+
+```
+
+#install.packages("rattle")
+suppressPackageStartupMessages({
+  library(randomForest)
+})
+
+rf.feature.importance <- randomForest(SIU_CUST_YN ~ + SEX + AGE + RESI_COST + FP_CAREER + CTPR + OCCP_GRP_1 + OCCP_GRP_2 + RCBASE_HSHD_INCM + VLID_HOSP_OTDA_TOTAL + DMND_AMT_TOTAL + PAYM_AMT_TOTAL + REAL_PAYM_TERM_TOTAL, data = train.batch, importance = TRUE)
+
+importance(rf.feature.importance)
+varImpPlot(rf.feature.importance, main = "varImpPlot")
+
+```
+
+#### Positive Rule
+BGCON_CLAIM_DATA
+
+  * 
+
+
+#### Negative Rule
+
+BGCON_CLAIM_DATA
+  * ACCI_OCCP_GRP2
+    * 고소득 전문직 
+    * 법무직 종사자
+  * RESL_CD1
+    * F 병명 코드
+    * Z 병명 코드 (기타 쪽으로 분류되는 질환)
+  * CRNT_PROG_DVSN
+    * 21? 
+    * 22?
+  * DMND_RESN_CODE
+    * 9?
+  * COUNT_TRMT_ITEM
+    * 0
+    * 4
+  * VLID_HOSP_OTDA
+    * 0 이상?
+     
+CUST
+  * CHLD_CNT
+    * 5?
+  * MATE_OCCP_GRP_2 
+    * 대학교수/강사
+    * 고소득 전문직
+  * MAXCRDT
+    * 28?
+  * OCCP_GRP_2
+    * 고소득 전문직 
+    * 법무직 종사자
+  * CTPR
+    * 제주 
+    * 법무직 종사자
+  * BEFO_JOB
+    * 경찰
+    * 국영기업체
+    * 농수축산업
+
+
+
+
