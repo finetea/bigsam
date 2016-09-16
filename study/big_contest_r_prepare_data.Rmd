@@ -1,0 +1,113 @@
+---
+title: "보험 사기 예측"
+author: "김성규"
+date: "2016년 9월 13일"
+output: html_document
+---
+
+# 보험사기예측
+#### 목표: 학습에 필요한 트레이닝 데이터 셋 생성
+  
+
+```{r}
+#Set path
+setwd("D:\\Work\\data\\bigsam\\study")
+
+
+library(foreach)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(ggplot2)
+library(plyr)
+library(corrgram)
+library(corrplot)
+library(kernlab)
+library(Hmisc)
+library(Amelia)
+library(lattice)
+library(caret)
+library(psych)
+library(caTools)
+library(e1071)
+library(data.table)
+
+# CSV Raw Data 불러오기
+BGCON_CLAIM_DATA <- read.csv("data/BGCON_CLAIM_DATA.csv")
+BGCON_CNTT_DATA <- read.csv("data/BGCON_CNTT_DATA.csv")
+BGCON_CUST_DATA <- read.csv("data/BGCON_CUST_DATA.csv") # 기준 데이터
+BGCON_FMLY_DATA <- read.csv("data/BGCON_FMLY_DATA.csv")
+BGCON_FPINFO_DATA <- read.csv("data/BGCON_FPINFO_DATA.csv")
+FPINFO_SIU_RATE <- read.csv("data/FPINFO_SIU_RATE.csv") # sql로 만든 FP 사기율 데이터
+
+
+# customer 데이터에 FAMILY, FP, CNTT를 통합하기
+
+# family 데이터 통합 1. family 종류, 2. family의 사기 유무 (Y/N/NA), 3. others
+FAMILY_TMP <- merge(x = BGCON_FMLY_DATA, y = BGCON_CUST_DATA, by.x = 'SUB_CUST_ID', by.y = 'CUST_ID', all = F)
+FAMILY_TMP <- subset(FAMILY_TMP, select=c(CUST_ID, SUB_CUST_ID, FMLY_RELN_CODE, SIU_CUST_YN, FP_CAREER, CTPR, MINCRDT, RCBASE_HSHD_INCM))
+setnames(FAMILY_TMP, c("SIU_CUST_YN", "FP_CAREER", "CTPR", "MINCRDT", "RCBASE_HSHD_INCM"), c("FMLY_SIU_CUST_YN", "FMLY_FP_CAREER", "FMLY_CTPR", "FMLY_MINCRDT", "FMLY_RCBASE_HSHD_INCM"))
+CUSTOMER <- merge(x = BGCON_CUST_DATA, y = FAMILY_TMP, by = 'CUST_ID', all = TRUE)
+CUSTOMER <- subset(CUSTOMER, select=-(SUB_CUST_ID))
+#CUSTOMER_TMP <- subset(CUSTOMER, select=c(CUST_ID, FMLY_RELN_CODE, SIU_CUST_YN, FMLY_SIU_CUST_YN, FMLY_FP_CAREER, CTPR, FMLY_CTPR, MINCRDT, FMLY_MINCRDT, RCBASE_HSHD_INCM, FMLY_RCBASE_HSHD_INCM))
+
+# contract 데이터 통합. REAL_PAYM_TERM, MAIN_INSR_AMT, SUM_ORIG_PREM, RECP_PUBL, CNTT_RECP, MNTH_INCM_AMT, DISTANCE
+# role 등의 factor 통합 방안 필요
+CNTT_TMP <-
+ddply(BGCON_CNTT_DATA, 
+      .(CUST_ID), 
+      function(x) { 
+        data.frame(
+          SUM_REAL_PAYM_TERM=sum(x$REAL_PAYM_TERM),
+          MEAN_REAL_PAYM_TERM=mean(x$REAL_PAYM_TERM),
+          SUM_MAIN_INSR_AMT=sum(as.numeric(x$MAIN_INSR_AMT)),
+          MEAN_MAIN_INSR_AMT=mean(x$MAIN_INSR_AMT), 
+          SUM_SUM_ORIG_PREM=sum(x$SUM_ORIG_PREM), 
+          MEAN_SUM_ORIG_PREM=mean(x$SUM_ORIG_PREM),
+          SUM_RECP_PUBL=sum(x$RECP_PUBL),
+          MEAN_RECP_PUBL=mean(x$RECP_PUBL),
+          SUM_CNTT_RECP=sum(x$CNTT_RECP),
+          MEAN_CNTT_RECP=mean(x$CNTT_RECP),
+          SUM_MNTH_INCM_AMT=sum(x$MNTH_INCM_AMT),
+          MEAN_MNTH_INCM_AMT=mean(x$MNTH_INCM_AMT),
+          SUM_DISTANCE=sum(x$DISTANCE),
+          MEAN_DISTANCE=mean(x$DISTANCE)
+          )
+        } 
+      )
+head(CNTT_TMP,  n=20)
+
+CUSTOMER <- merge(x=CUSTOMER, y=CNTT_TMP, by='CUST_ID', all=TRUE)
+
+# fp 데이터 통합. FP의 사기율 데이터 통합
+# contract별로 fp 사기율을 합/평균하고 이 값을 다시 customer 별로 합/평균
+CNTT_TMP2 <- merge(x=BGCON_CNTT_DATA, y=FPINFO_SIU_RATE, by = 'CLLT_FP_PRNO', all=TRUE)
+CNTT_TMP2$FP_SIU_Y_RATE[is.na(CNTT_TMP2$FP_SIU_Y_RATE)] <- 0
+CNTT_TMP2$FP_SIU_N_RATE[is.na(CNTT_TMP2$FP_SIU_N_RATE)] <- 0
+CNTT_TMP3 <-
+ddply(CNTT_TMP2, 
+      .(CUST_ID),
+      function(x) { 
+        data.frame(
+          SUM_FP_SIU_Y_RATE=sum(x$FP_SIU_Y_RATE),
+          MEAN_FP_SIU_Y_RATE=mean(x$FP_SIU_Y_RATE),
+          SUM_FP_SIU_N_RATE=sum(x$FP_SIU_N_RATE),
+          MEAN_FP_SIU_N_RATE=mean(x$FP_SIU_N_RATE)
+          ) 
+        } 
+      )
+
+CUSTOMER <- merge(x=CUSTOMER, y=CNTT_TMP3, by = 'CUST_ID', all=TRUE)
+
+
+names(CUSTOMER)
+
+summary(SIU_CUST_YN ~
+          SUM_REAL_PAYM_TERM+MEAN_REAL_PAYM_TERM+SUM_MAIN_INSR_AMT+MEAN_MAIN_INSR_AMT+
+          SUM_SUM_ORIG_PREM+MEAN_SUM_ORIG_PREM+SUM_RECP_PUBL+MEAN_RECP_PUBL+
+          SUM_CNTT_RECP+MEAN_CNTT_RECP+SUM_MNTH_INCM_AMT+MEAN_MNTH_INCM_AMT+
+          SUM_DISTANCE+MEAN_DISTANCE+SUM_FP_SIU_Y_RATE+MEAN_FP_SIU_Y_RATE+SUM_FP_SIU_N_RATE+MEAN_FP_SIU_N_RATE, 
+        data = CUSTOMER, 
+        method="reverse")
+
+
