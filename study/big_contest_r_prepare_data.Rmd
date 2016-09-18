@@ -82,32 +82,51 @@ CUSTOMER <- merge(x=CUSTOMER, y=CNTT_TMP, by='CUST_ID', all=TRUE)
 # fp 데이터 통합. FP의 사기율 데이터 통합
 # contract별로 fp 사기율을 합/평균하고 이 값을 다시 customer 별로 합/평균
 CNTT_TMP2 <- merge(x=BGCON_CNTT_DATA, y=FPINFO_SIU_RATE, by = 'CLLT_FP_PRNO', all=TRUE)
-CNTT_TMP2$FP_SIU_Y_RATE[is.na(CNTT_TMP2$FP_SIU_Y_RATE)] <- 0
-CNTT_TMP2$FP_SIU_N_RATE[is.na(CNTT_TMP2$FP_SIU_N_RATE)] <- 0
+#CNTT_TMP2$FP_SIU_Y_RATE[is.na(CNTT_TMP2$FP_SIU_Y_RATE)] <- 0
+#CNTT_TMP2$FP_SIU_N_RATE[is.na(CNTT_TMP2$FP_SIU_N_RATE)] <- 0
 CNTT_TMP3 <-
 ddply(CNTT_TMP2, 
       .(CUST_ID),
       function(x) { 
         data.frame(
-          SUM_FP_SIU_Y_RATE=sum(x$FP_SIU_Y_RATE),
-          MEAN_FP_SIU_Y_RATE=mean(x$FP_SIU_Y_RATE),
-          SUM_FP_SIU_N_RATE=sum(x$FP_SIU_N_RATE),
-          MEAN_FP_SIU_N_RATE=mean(x$FP_SIU_N_RATE)
+          SUM_FP_SIU_Y_RATE  = sum (x$FP_SIU_Y_RATE),
+          MEAN_FP_SIU_Y_RATE = mean(x$FP_SIU_Y_RATE),
+          SUM_FP_SIU_N_RATE  = sum (x$FP_SIU_N_RATE),
+          MEAN_FP_SIU_N_RATE = mean(x$FP_SIU_N_RATE)
           ) 
         } 
       )
 
 CUSTOMER <- merge(x=CUSTOMER, y=CNTT_TMP3, by = 'CUST_ID', all=TRUE)
 
+CUSTOMER_TRAIN <- subset(CUSTOMER, DIVIDED_SET==1)
 
-names(CUSTOMER)
-
+names(CUSTOMER_TRAIN)
+summary(CUSTOMER_TRAIN)
 summary(SIU_CUST_YN ~
           SUM_REAL_PAYM_TERM+MEAN_REAL_PAYM_TERM+SUM_MAIN_INSR_AMT+MEAN_MAIN_INSR_AMT+
           SUM_SUM_ORIG_PREM+MEAN_SUM_ORIG_PREM+SUM_RECP_PUBL+MEAN_RECP_PUBL+
           SUM_CNTT_RECP+MEAN_CNTT_RECP+SUM_MNTH_INCM_AMT+MEAN_MNTH_INCM_AMT+
           SUM_DISTANCE+MEAN_DISTANCE+SUM_FP_SIU_Y_RATE+MEAN_FP_SIU_Y_RATE+SUM_FP_SIU_N_RATE+MEAN_FP_SIU_N_RATE, 
-        data = CUSTOMER, 
+        data = CUSTOMER_TRAIN, 
         method="reverse")
 
 
+#looking for an insight
+hist(CUSTOMER$SUM_MAIN_INSR_AMT[CUSTOMER$SIU_CUST_YN=='N'], col='blue', breaks = 500, xlim = c(0,3000000000))
+hist(CUSTOMER$SUM_MAIN_INSR_AMT[CUSTOMER$SIU_CUST_YN=='Y'], col='red', breaks = 500, xlim = c(0,3000000000), add=TRUE)
+
+hist(CUSTOMER$SUM_MNTH_INCM_AMT[CUSTOMER$SIU_CUST_YN=='N'], col='blue', breaks = 500, xlim = c(0,100000000))
+hist(CUSTOMER$SUM_MNTH_INCM_AMT[CUSTOMER$SIU_CUST_YN=='Y'], col='red', breaks = 500, xlim = c(0,100000000), add=TRUE)
+
+y<-density(CUSTOMER$SUM_MAIN_INSR_AMT[CUSTOMER$SIU_CUST_YN=='Y'])
+n<-density(CUSTOMER$SUM_MAIN_INSR_AMT[CUSTOMER$SIU_CUST_YN=='N'])
+
+plot(SUM_MAIN_INSR_AMT~SUM_MNTH_INCM_AMT,data=CUSTOMER_TRAIN,col=SIU_CUST_YN)
+xyplot(SUM_MAIN_INSR_AMT~SUM_MNTH_INCM_AMT|SIU_CUST_YN,data=CUSTOMER_TRAIN)
+barchart(SUM_MAIN_INSR_AMT~SUM_MNTH_INCM_AMT|SIU_CUST_YN,data=CUSTOMER_TRAIN)
+
+library(DescTools)
+#PlotDescNumFact(SUM_MAIN_INSR_AMT~SIU_CUST_YN,data=CUSTOMER_TRAIN)
+Desc(CUSTOMER_TRAIN, plotit = TRUE)
+Desc(SUM_MAIN_INSR_AMT~SIU_CUST_YN,CUSTOMER_TRAIN,plot=TRUE)
