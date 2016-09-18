@@ -1,0 +1,184 @@
+---
+title: "보험 사기 예측"
+author: "윤지환"
+date: "2016년 9월 1일"
+output: html_document
+---
+
+# 보험사기예측
+## Data 추출
+
+```{r}
+#Set path
+setwd("C:\\Users\\rnfmf\\workspace\\bigsam\\study")
+
+# CSV Raw Data 불러오기
+BGCON_CLAIM_DATA <- read.csv("data/BGCON_CLAIM_DATA.csv")
+BGCON_CNTT_DATA <- read.csv("data/BGCON_CNTT_DATA.csv")
+BGCON_CUST_DATA <- read.csv("data/BGCON_CUST_DATA.csv") # 기준 데이터
+BGCON_FMLY_DATA <- read.csv("data/BGCON_FMLY_DATA.csv")
+BGCON_FPINFO_DATA <- read.csv("data/BGCON_FPINFO_DATA.csv")
+
+# RAW DATA 복사저장
+RAW_BGCON_CLAIM_DATA <- BGCON_CLAIM_DATA
+RAW_BGCON_CNTT_DATA <- BGCON_CNTT_DATA
+RAW_BGCON_CUST_DATA <- BGCON_CUST_DATA
+RAW_BGCON_FMLY_DATA <- BGCON_FMLY_DATA
+RAW_BGCON_FPINFO_DATA <- BGCON_FPINFO_DATA
+
+
+####DATE 변수들에서 YEAR를 추출함
+#BGCON_CLAIM_DATA
+BGCON_CLAIM_DATA$RECP_DATE_YEAR <- as.numeric(format(as.Date(as.character(BGCON_CLAIM_DATA$RECP_DATE), format = "%Y%m%d"), "%Y"))
+BGCON_CLAIM_DATA$ORIG_RESN_DATE_YEAR <- as.numeric(format(as.Date(as.character(BGCON_CLAIM_DATA$ORIG_RESN_DATE), format = "%Y%m%d"), "%Y"))
+BGCON_CLAIM_DATA$RESN_DATE_YEAR <- as.numeric(format(as.Date(as.character(BGCON_CLAIM_DATA$RESN_DATE), format = "%Y%m%d"), "%Y"))
+BGCON_CLAIM_DATA$PAYM_DATE_YEAR <- as.numeric(format(as.Date(as.character(BGCON_CLAIM_DATA$PAYM_DATE), format = "%Y%m%d"), "%Y"))
+
+#BGCON_CLAIM_DATA
+BGCON_CUST_DATA$CUST_RGST_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_CUST_DATA$CUST_RGST), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+BGCON_CUST_DATA$MAX_PAYM_YM_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_CUST_DATA$MAX_PAYM_YM), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+
+#BGCON_CNTT_DATA
+BGCON_CNTT_DATA$CNTT_YM_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_CNTT_DATA$CNTT_YM), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+BGCON_CNTT_DATA$EXPR_YM_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_CNTT_DATA$EXPR_YM), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+BGCON_CNTT_DATA$EXTN_YM_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_CNTT_DATA$EXTN_YM), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+BGCON_CNTT_DATA$LAPS_YM_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_CNTT_DATA$LAPS_YM), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+
+#BGCON_FPINFO_DATA
+BGCON_FPINFO_DATA$ETRS_YM_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_FPINFO_DATA$ETRS_YM), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+BGCON_FPINFO_DATA$FIRE_YM_YEAR <- as.numeric(format(as.Date(paste(as.character(BGCON_FPINFO_DATA$FIRE_YM), c("01"), sep=""), format = "%Y%m%d"), "%Y"))
+
+
+##BGCON_CLAIM_DATA 데이터에서 병명 데이터 앞글자를 분리 
+BGCON_CLAIM_DATA$CAUS_CODE_FIRST <- substring(BGCON_CLAIM_DATA$CAUS_CODE, 1, 1)
+BGCON_CLAIM_DATA$RESL_CD1_FIRST <- substring(BGCON_CLAIM_DATA$RESL_CD1, 1, 1)
+
+
+####다른 필드의 값을 Sum 하여 df1 필드에 채워줌
+#df_from : 가져오려는 필드가 있는 df
+#df_to : df_from에서 가져온 필드를 저장하려는 df
+#t_col_name : df_from에서 가져오려 column 명
+#c_col_name : 만들려는 column 이름
+#by_col_name : merge 하기위해서 기준이 되는 column 명
+merge_after_aggregate <- function(df_from, df_to, by_col_name, t_col_name, c_col_name){
+  agg_df_temp <- aggregate(df_from[, t_col_name], by=list(df_from[, by_col_name]), FUN=sum)
+  colnames(agg_df_temp) <- c(by_col_name, c_col_name)
+  ret_df <- merge(x = df_to, y = agg_df_temp, by = by_col_name, all=TRUE)
+  return (ret_df)
+}
+
+## BGCON_CLAIM_DATA의 numeric 값의 데이터중 TOTAL(SUM)이 가능한 값들을 SUM하여 BGCON_CUST_DATA에 merge 함
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "CUST_ID", "VLID_HOSP_OTDA", "VLID_HOSP_OTDA_TOTAL")
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "CUST_ID", "HOUSE_HOSP_DIST", "HOUSE_HOSP_DIST_TOTAL")
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "CUST_ID", "DMND_AMT", "DMND_AMT_TOTAL")
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "CUST_ID", "PAYM_AMT", "PAYM_AMT_TOTAL")
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "CUST_ID", "SELF_CHAM", "SELF_CHAM_TOTAL")
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "CUST_ID", "NON_PAY", "NON_PAY_TOTAL")
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "CUST_ID", "TAMT_SFCA", "TAMT_SFCA_TOTAL")
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "CUST_ID", "PATT_CHRG_TOTA", "PATT_CHRG_TOTA_TOTAL")
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "CUST_ID", "DSCT_AMT", "DSCT_AMT_TOTAL")
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "CUST_ID", "COUNT_TRMT_ITEM", "COUNT_TRMT_ITEM_TOTAL")
+
+## BGCON_CNTT_DATA의 numeric 값의 데이터중 TOTAL(SUM)이 가능한 값들을 SUM하여 BGCON_CUST_DATA에 merge 함
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CNTT_DATA, BGCON_CUST_DATA, "CUST_ID", "REAL_PAYM_TERM", "REAL_PAYM_TERM_TOTAL")
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CNTT_DATA, BGCON_CUST_DATA, "CUST_ID", "MAIN_INSR_AMT", "MAIN_INSR_AMT_TOTAL")
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CNTT_DATA, BGCON_CUST_DATA, "CUST_ID", "SUM_ORIG_PREM", "SUM_ORIG_PREM_TOTAL")
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CNTT_DATA, BGCON_CUST_DATA, "CUST_ID", "MNTH_INCM_AMT", "MNTH_INCM_AMT_TOTAL")
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CNTT_DATA, BGCON_CUST_DATA, "CUST_ID", "DISTANCE", "DISTANCE_TOTAL")
+
+
+
+## 각 아이디별 총 CLAIM(보험처리건수)를 기록하여 BGCON_CUST_DATA에 merge 함 ******************************************
+BGCON_CLAIM_DATA$CLAIM <- 1
+BGCON_CUST_DATA <- merge_after_aggregate(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "CUST_ID", "CLAIM", "CLAIM_TOTAL")
+
+
+
+####다른 필드의 factor 값을 컬럼으로 만들어서 df_to에 생성해줌
+#df_from : 가져오려는 필드가 있는 df
+#df_to : df_from에서 가져온 필드를 저장하려는 df
+#t_col_name : df_from에서 가져오려 column 명
+#by_col_name : merge 하기위해서 기준이 되는 column 명
+#t_na : NA값 이 생길경우 넣을 값  ex)숫자의 경우 0으로 채움
+add_count_of_value_by_colname <- function(df_from, df_to, t_col_name, by_col_name, t_na=NULL){
+  
+  df_from[, t_col_name] <- factor(df_from[, t_col_name])
+  t_col_arr <- levels(df_from[, t_col_name])
+  
+  for (t_val in t_col_arr){
+    agg_temp <- aggregate(df_from[which(df_from[, t_col_name]== t_val), t_col_name], by=list(df_from[which(df_from[, t_col_name] == t_val), by_col_name]), FUN=function(x){ sum(!is.na(x))
+    })
+    col_temp <- paste(t_col_name, "_", t_val, sep="")
+    colnames(agg_temp) <- c(by_col_name, col_temp)
+    
+    df_to <- merge(x = df_to, y = agg_temp, by = by_col_name, all=TRUE)
+    #NA 값 채우
+    if(!is.null(t_na)){
+      df_to[is.na(df_to[, col_temp]), col_temp] <- t_na
+    }
+  }
+  return (df_to)
+}
+
+## BGCON_CUST_DATA의  YEAR로 추출한 데이터를 하나의 컬럼으로 만들어 BGCON_CUST_DATA에 merge함
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CUST_DATA, BGCON_CUST_DATA, "CUST_RGST_YEAR", "CUST_ID", 0)
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CUST_DATA, BGCON_CUST_DATA, "MAX_PAYM_YM_YEAR", "CUST_ID", 0)
+
+## BGCON_CLAIM_DATA에서 YEAR로 추출한 데이터를 하나의 컬럼으로 만들어 BGCON_CUST_DATA에 merge함
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "RECP_DATE_YEAR", "CUST_ID", 0)
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "ORIG_RESN_DATE_YEAR", "CUST_ID", 0)
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "RESN_DATE_YEAR", "CUST_ID", 0)
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "PAYM_DATE_YEAR", "CUST_ID", 0)
+
+## BGCON_CNTT_DATA에서 YEAR로 추출한 데이터를 하나의 컬럼으로 만들어 BGCON_CUST_DATA에 merge함
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CNTT_DATA, BGCON_CUST_DATA, "CNTT_YM_YEAR", "CUST_ID", 0)
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CNTT_DATA, BGCON_CUST_DATA, "EXPR_YM_YEAR", "CUST_ID", 0)
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CNTT_DATA, BGCON_CUST_DATA, "EXTN_YM_YEAR", "CUST_ID", 0)
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CNTT_DATA, BGCON_CUST_DATA, "LAPS_YM_YEAR", "CUST_ID", 0)
+
+## BGCON_FPINFO_DATA에서 YEAR로 추출한 데이터를 하나의 컬럼으로 만들어 BGCON_CNTT_DATA에 merge함
+BGCON_CNTT_DATA <- add_count_of_value_by_colname(BGCON_FPINFO_DATA, BGCON_CNTT_DATA, "ETRS_YM_YEAR", "CLLT_FP_PRNO", 0)
+BGCON_CNTT_DATA <- add_count_of_value_by_colname(BGCON_FPINFO_DATA, BGCON_CNTT_DATA, "FIRE_YM_YEAR", "CLLT_FP_PRNO", 0)
+
+
+## BGCON_CLAIM_DATA에서 병명 앞글자로 추출한 데이터를 하나의 컬럼으로 만들어 BGCON_CUST_DATA에 merge함
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "CAUS_CODE_FIRST", "CUST_ID", 0)
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "RESL_CD1_FIRST", "CUST_ID", 0)
+
+## BGCON_CLAIM_DATA에서 FP 변경 여부(CHANG_FP_YN)데이터를 하나의 컬럼으로 만들어 BGCON_CUST_DATA에 merge함
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "CHANG_FP_YN", "CUST_ID", 0)
+
+## BGCON_CLAIM_DATA에서 현재진행구분(CRNT_PROG_DVSN)데이터를 하나의 컬럼으로 만들어 BGCON_CUST_DATA에 merge함
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "CRNT_PROG_DVSN", "CUST_ID", 0)
+
+## BGCON_CLAIM_DATA에서 사고구분(ACCI_DVSN)데이터를 하나의 컬럼으로 만들어 BGCON_CUST_DATA에 merge함
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "ACCI_DVSN", "CUST_ID", 0)
+
+## BGCON_CLAIM_DATA에서 청구사유코드(DMND_RESN_CODE)데이터를 하나의 컬럼으로 만들어 BGCON_CUST_DATA에 merge함
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "DMND_RESN_CODE", "CUST_ID", 0)
+
+## BGCON_CLAIM_DATA에서 유의병원여부(ACCI_HOSP_ADDR)데이터를 하나의 컬럼으로 만들어 BGCON_CUST_DATA에 merge함
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "ACCI_HOSP_ADDR", "CUST_ID", 0)
+
+## BGCON_CLAIM_DATA에서 병원종별구분(HOSP_SPEC_DVSN)데이터를 하나의 컬럼으로 만들어 BGCON_CUST_DATA에 merge함
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "HOSP_SPEC_DVSN", "CUST_ID", 0)
+
+## BGCON_CLAIM_DATA에서 유의병원여부(HEED_HOSP_YN)데이터를 하나의 컬럼으로 만들어 BGCON_CUST_DATA에 merge함
+BGCON_CUST_DATA <- add_count_of_value_by_colname(BGCON_CLAIM_DATA, BGCON_CUST_DATA, "HEED_HOSP_YN", "CUST_ID", 0)
+
+
+
+## CLAIM 건수별 유효입원일수(VLID_HOSP_OTDA_TOTAL) = 총 유효입원일수 / 보험처리건
+BGCON_CUST_DATA$VLID_HOSP_OTDA_DIV_BY_CLAIM <- BGCON_CUST_DATA$VLID_HOSP_OTDA_TOTAL / BGCON_CUST_DATA$CLAIM_TOTAL
+
+## CLAIM 건수별 유의병원여부(VLID_HOSP_OTDA_TOTAL) = 총 유의병원여부 / 보험처리건
+BGCON_CUST_DATA$HEED_HOSP_YN_Y_DIV_BY_CLAIM <- BGCON_CUST_DATA$HEED_HOSP_YN_Y / BGCON_CUST_DATA$CLAIM_TOTAL
+
+
+# 처리된 데이터 csv 파일로 저장
+write.csv(BGCON_CLAIM_DATA, "data/BGCON_CLAIM_DATA_PROCESSED.csv")
+write.csv(BGCON_CNTT_DATA, "data/BGCON_CNTT_DATA_PROCESSED.csv")
+write.csv(BGCON_CUST_DATA, "data/BGCON_CUST_DATA_PROCESSED.csv")
+write.csv(BGCON_FMLY_DATA, "data/BGCON_FMLY_DATA_PROCESSED.csv")
+write.csv(BGCON_FPINFO_DATA, "data/BGCON_FPINFO_DATA_PROCESSED.csv")
+```

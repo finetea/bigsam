@@ -83,24 +83,56 @@ BGCON_CNTT_FPINFO_DATA.df$FIRE_YM_YEAR <- as.numeric(format(as.Date(paste(as.cha
 
 ```
 
-  * 각 YEAR 변수의 중앙 YEAR를 만들어줌
+  * 각 YEAR 변수의 중앙치(Median) YEAR를 만들어줌
 
 ```{r}
-median(BGCON_CLAIM_DATA.df[which(BGCON_CLAIM_DATA.df$CUST_ID == 8170), "PAYM_DATE_YEAR"])
-median(BGCON_CLAIM_DATA.df[which(BGCON_CLAIM_DATA.df$CUST_ID == 3878) && !is.na(BGCON_CLAIM_DATA.df$RECP_DATE_YEAR), "RECP_DATE_YEAR"])
-median(BGCON_CLAIM_DATA.df[!is.na(BGCON_CLAIM_DATA.df$ORIG_RESN_DATE_YEAR), "ORIG_RESN_DATE_YEAR"])
-median(BGCON_CLAIM_DATA.df[!is.na(BGCON_CLAIM_DATA.df$RESN_DATE_YEAR), "RESN_DATE_YEAR"])
-median(BGCON_CLAIM_DATA.df[!is.na(BGCON_CLAIM_DATA.df$PAYM_DATE_YEAR), "PAYM_DATE_YEAR"])
+#다른 필드의 factor 값을 컬럼으로 만들어서 df_to에 생성해줌
+#df_from : 가져오려는 필드가 있는 df
+#df_to : df_from에서 가져온 필드를 저장하려는 df
+#t_col_name : df_from에서 가져오려 column 명
+#by_col_name : merge 하기위해서 기준이 되는 column 명
+#t_na : NA값 이 생길경우 넣을 값  ex)숫자의 경우 0으로 채움
+add_count_of_value_by_colname <- function(df_from, df_to, t_col_name, by_col_name, t_na=NULL){
+  
+  df_from[, t_col_name] <- factor(df_from[, t_col_name])
+  t_col_arr <- levels(df_from[, t_col_name])
+  
+  for (t_val in t_col_arr){
+    agg_temp <- aggregate(df_from[which(df_from[, t_col_name]== t_val), t_col_name], by=list(df_from[which(df_from[, t_col_name] == t_val), by_col_name]), FUN=function(x){ sum(!is.na(x))
+    })
+    col_temp <- paste(t_col_name, "_", t_val, sep="")
+    colnames(agg_temp) <- c(t_by, col_temp)
+    
+    df_to <- merge(x = df_to, y = agg_temp, by = by_col_name, all=TRUE)
+    #NA 값 채우
+    if(!is.null(t_na)){
+      df_to[is.na(df_to[, col_temp]), col_temp] <- t_na
+    }
+  }
+  return (df_to)
+}
 
-median(BGCON_CUST_FMLY_DATA.df[!is.na(BGCON_CUST_FMLY_DATA.df$CUST_RGST_YEAR), "CUST_RGST_YEAR"])
-median(BGCON_CUST_FMLY_DATA.df[!is.na(BGCON_CUST_FMLY_DATA.df$MAX_PAYM_YM_YEAR), "MAX_PAYM_YM_YEAR"])
+BGCON_CUST_FMLY_DATA.df <- BGCON_CUST_FMLY_DATA.df
+BGCON_CUST_FMLY_DATA.df <- add_count_of_value_by_colname(BGCON_CLAIM_DATA.df, BGCON_CUST_FMLY_DATA.df, "RECP_DATE_YEAR", "CUST_ID", 0)
 
-median(BGCON_CNTT_FPINFO_DATA.df[!is.na(BGCON_CNTT_FPINFO_DATA.df$CNTT_YM_YEAR), "CNTT_YM_YEAR"])
-median(BGCON_CNTT_FPINFO_DATA.df[!is.na(BGCON_CNTT_FPINFO_DATA.df$EXPR_YM_YEAR), "EXPR_YM_YEAR"])
-median(BGCON_CNTT_FPINFO_DATA.df[!is.na(BGCON_CNTT_FPINFO_DATA.df$EXTN_YM_YEAR), "EXTN_YM_YEAR"])
-median(BGCON_CNTT_FPINFO_DATA.df[!is.na(BGCON_CNTT_FPINFO_DATA.df$LAPS_YM_YEAR), "LAPS_YM_YEAR"])
-median(BGCON_CNTT_FPINFO_DATA.df[!is.na(BGCON_CNTT_FPINFO_DATA.df$ETRS_YM_YEAR), "ETRS_YM_YEAR"])
-median(BGCON_CNTT_FPINFO_DATA.df[!is.na(BGCON_CNTT_FPINFO_DATA.df$FIRE_YM_YEAR), "FIRE_YM_YEAR"])
+BGCON_CUST_FMLY_DATA.df <- add_count_of_value_by_colname(BGCON_CLAIM_DATA.df, BGCON_CUST_FMLY_DATA.df, "ORIG_RESN_DATE_YEAR", "CUST_ID", 0)
+BGCON_CUST_FMLY_DATA.df <- add_count_of_value_by_colname(BGCON_CLAIM_DATA.df, BGCON_CUST_FMLY_DATA.df, "RESN_DATE_YEAR", "CUST_ID", 0)
+BGCON_CUST_FMLY_DATA.df <- add_count_of_value_by_colname(BGCON_CLAIM_DATA.df, BGCON_CUST_FMLY_DATA.df, "PAYM_DATE_YEAR", "CUST_ID", 0)
+
+
+BGCON_CUST_FMLY_DATA.df <- add_count_of_value_by_colname(BGCON_CUST_FMLY_DATA.df.test, BGCON_CUST_FMLY_DATA.df, "CUST_RGST_YEAR", "CUST_ID", 0)
+BGCON_CUST_FMLY_DATA.df <- add_count_of_value_by_colname(BGCON_CUST_FMLY_DATA.df.test, BGCON_CUST_FMLY_DATA.df, "MAX_PAYM_YM_YEAR", "CUST_ID", 0)
+
+
+BGCON_CUST_FMLY_DATA.df <- add_count_of_value_by_colname(BGCON_CNTT_FPINFO_DATA.df, BGCON_CUST_FMLY_DATA.df, "CNTT_YM_YEAR", "CUST_ID", 0)
+BGCON_CUST_FMLY_DATA.df <- add_count_of_value_by_colname(BGCON_CNTT_FPINFO_DATA.df, BGCON_CUST_FMLY_DATA.df, "EXPR_YM_YEAR", "CUST_ID", 0)
+BGCON_CUST_FMLY_DATA.df <- add_count_of_value_by_colname(BGCON_CNTT_FPINFO_DATA.df, BGCON_CUST_FMLY_DATA.df, "EXTN_YM_YEAR", "CUST_ID", 0)
+BGCON_CUST_FMLY_DATA.df <- add_count_of_value_by_colname(BGCON_CNTT_FPINFO_DATA.df, BGCON_CUST_FMLY_DATA.df, "LAPS_YM_YEAR", "CUST_ID", 0)
+BGCON_CUST_FMLY_DATA.df <- add_count_of_value_by_colname(BGCON_CNTT_FPINFO_DATA.df, BGCON_CUST_FMLY_DATA.df, "ETRS_YM_YEAR", "CUST_ID", 0)
+BGCON_CUST_FMLY_DATA.df <- add_count_of_value_by_colname(BGCON_CNTT_FPINFO_DATA.df, BGCON_CUST_FMLY_DATA.df, "FIRE_YM_YEAR", "CUST_ID", 0)
+
+
+
 ```
 
 
@@ -454,6 +486,47 @@ test.batch <- df.train[-training.rows, ]
 set.seed(23)
 step(glm(SIU_CUST_YN ~ + DIVIDED_SET + SEX + AGE + RESI_COST + FP_CAREER + CTPR + OCCP_GRP_1 + OCCP_GRP_2 + RCBASE_HSHD_INCM + VLID_HOSP_OTDA_TOTAL + DMND_AMT_TOTAL + PAYM_AMT_TOTAL + REAL_PAYM_TERM_TOTAL, data = train.batch, family=binomial("logit")))
 
+
+
+
+train.batch$CUST_RGST_YEAR <- NULL
+train.batch$MAX_PAYM_YM_YEAR <- NULL
+train.batch$FMLY_RELN_CODE <- NULL
+train.batch$SUB_CUST_ID <- NULL
+train.batch$JPBASE_HSHD_INCM <- NULL
+train.batch$CUST_INCM <- NULL
+
+train.batch$MAX_PRM <- NULL
+train.batch$MAX_PAYM_YM <- NULL
+train.batch$CHLD_CNT <- NULL
+train.batch$MAXCRDT <- NULL
+train.batch$MINCRDT <- NULL
+train.batch$TOTALPREM <- NULL
+
+
+train.batch$CUST_RGST <- NULL
+train.batch$RESI_TYPE_CODE <- NULL
+train.batch$HOUSE_HOSP_DIST_TOTAL <- NULL
+train.batch$SELF_CHAM_TOTAL <- NULL
+
+train.batch$NON_PAY_TOTAL <- NULL
+train.batch$TAMT_SFCA_TOTAL <- NULL
+train.batch$PATT_CHRG_TOTA_TOTAL <- NULL
+train.batch$DSCT_AMT_TOTAL <- NULL
+train.batch$COUNT_TRMT_ITEM_TOTAL <- NULL
+train.batch$MAIN_INSR_AMT_TOTAL <- NULL
+train.batch$MNTH_INCM_AMT_TOTAL <- NULL
+train.batch$DISTANCE_TOTAL <- NULL
+train.batch$FMLY_RELN_CODE <- NULL
+train.batch$SUM_ORIG_PREM_TOTAL <- NULL
+str(train.batch)
+print_missing_count(train.batch)
+
+
+set.seed(23)
+step(glm(SIU_CUST_YN ~ ., data = train.batch, family=binomial("logit")))
+
+
 glm.tune.1 <- train(SIU_CUST_YN ~ RESI_COST + CTPR + OCCP_GRP_1 + VLID_HOSP_OTDA_TOTAL + PAYM_AMT_TOTAL
                     ,data = train.batch
                     ,method = "glm"
@@ -464,7 +537,13 @@ summary(glm.tune.1)
 
 #### Model Evaluation
 glm.pred.1 <- predict(glm.tune.1, test.batch)
-confusionMatrix(glm.pred.1, test.batch$SIU_CUST_YN) 
+confusion <- (confusionMatrix(glm.pred.1, test.batch$SIU_CUST_YN))
+
+# F-Score: 2 * precision(Pos Pred Value) * recall(Sensitivity) /(precision + recall):
+f1_score <- (2 * confusion$byClass[3] * confusion$byClass[1]) / (confusion$byClass[3] + confusion$byClass[1])
+names(f1_score) <- "F1 Score"
+f1_score
+
 ```
 
 ```
@@ -579,7 +658,14 @@ summary(svm.tune.1)
 
 #### SVM Model Evaluation
 svm.pred.1 <- predict(svm.tune.1, test.batch)
-confusionMatrix(svm.pred.1, test.batch$SIU_CUST_YN) 
+confusion <- confusionMatrix(svm.pred.1, test.batch$SIU_CUST_YN) 
+
+
+# F-Score: 2 * precision(Pos Pred Value) * recall(Sensitivity) /(precision + recall):
+f1_score <- (2 * confusion$byClass[3] * confusion$byClass[1]) / (confusion$byClass[3] + confusion$byClass[1])
+names(f1_score) <- "F1 Score"
+f1_score
+
 ```
 
 
@@ -702,8 +788,15 @@ summary(rf.tune.1)
 plot(rf.tune.1)
 
 #### Model Evaluation
-svm.pred.1 <- predict(rf.tune.1, test.batch)
-confusionMatrix(rf.pred.1, test.batch$SIU_CUST_YN)
+rf.pred.1 <- predict(rf.tune.1, test.batch)
+confusion <- confusionMatrix(rf.pred.1, test.batch$SIU_CUST_YN)
+
+
+# F-Score: 2 * precision(Pos Pred Value) * recall(Sensitivity) /(precision + recall):
+f1_score <- (2 * confusion$byClass[3] * confusion$byClass[1]) / (confusion$byClass[3] + confusion$byClass[1])
+names(f1_score) <- "F1 Score"
+f1_score
+
 ```
 
 

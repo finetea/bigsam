@@ -1,0 +1,307 @@
+---
+title: "보험 사기 예측"
+author: "윤지환"
+date: "2016년 9월 1일"
+output: html_document
+---
+
+# 보험사기예측
+#### 업데이트 사항
+
+  * 골절과 관련된 증상 및 사기 연관성이 높은 특정 병명이 있는 것으로 파악 
+    * M,Q,G 뼈, 선천적 기형, 뇌 및 신경계통
+    * 병명 sheet가 정리되어 있는 사이트 http://wpwsyn.tistory.com/152  상병기호와 CLAIM의 RESL_CD1과 동일하게 mapping
+  * *DATE변수가 영향을 미칠것으로 예상되어 YEAR 요약변수 생성 검증
+
+```{r}
+#Set path
+setwd("C:\\Users\\rnfmf\\workspace\\bigsam\\study")
+
+# CSV Raw Data 불러오기
+RAW_BGCON_CLAIM_DATA <- read.csv("data/BGCON_CLAIM_DATA.csv")
+RAW_BGCON_CNTT_DATA <- read.csv("data/BGCON_CNTT_DATA.csv")
+RAW_BGCON_CUST_DATA <- read.csv("data/BGCON_CUST_DATA.csv") # 기준 데이터
+RAW_BGCON_FMLY_DATA <- read.csv("data/BGCON_FMLY_DATA.csv")
+RAW_BGCON_FPINFO_DATA <- read.csv("data/BGCON_FPINFO_DATA.csv")
+
+# CSV Raw Data 불러오기
+BGCON_CLAIM_DATA <- read.csv("data/BGCON_CLAIM_DATA_PROCESSED.csv")
+BGCON_CNTT_DATA <- read.csv("data/BGCON_CNTT_DATA_PROCESSED.csv")
+BGCON_CUST_DATA <- read.csv("data/BGCON_CUST_DATA_PROCESSED.csv") # 기준 데이터
+BGCON_FMLY_DATA <- read.csv("data/BGCON_FMLY_DATA_PROCESSED.csv")
+BGCON_FPINFO_DATA <- read.csv("data/BGCON_FPINFO_DATA_PROCESSED.csv")
+
+
+BGCON_CUST_DATA.df <- BGCON_CUST_DATA
+
+# 각 dataframe에 SIU_CUST_YN 필드를 추가하여 EDA 수행준비
+CUST_ID.TEMP <- data.frame(BGCON_CUST_DATA[, "CUST_ID"])
+SIU_CUST_YN.TEMP <- data.frame(BGCON_CUST_DATA[, "SIU_CUST_YN"])
+SIU_CUST_YN.DF <- cbind(CUST_ID.TEMP, SIU_CUST_YN.TEMP)
+colnames(SIU_CUST_YN.DF) <- c("CUST_ID", "SIU_CUST_YN")
+
+
+BGCON_CLAIM_DATA.df <- merge(x = BGCON_CLAIM_DATA, y = SIU_CUST_YN.DF, by = "CUST_ID", all=TRUE)
+BGCON_CNTT_DATA.df <- merge(x = BGCON_CNTT_DATA, y = SIU_CUST_YN.DF, by = "CUST_ID", all=TRUE)
+BGCON_FMLY_DATA.df <- merge(x = BGCON_FMLY_DATA, y = SIU_CUST_YN.DF, by = "CUST_ID", all=TRUE)
+
+
+##BGCON_FPINFO_DATA는 CLLT_FP_PRNO로 기준
+CLLT_FP_PRNO.TEMP <- data.frame(BGCON_CNTT_DATA.df[, "CLLT_FP_PRNO"])
+SIU_CUST_YN.TEMP <- data.frame(BGCON_CNTT_DATA.df[, "SIU_CUST_YN"])
+SIU_CUST_YN.DF <- cbind(CLLT_FP_PRNO.TEMP, SIU_CUST_YN.TEMP)
+colnames(SIU_CUST_YN.DF) <- c("CLLT_FP_PRNO", "SIU_CUST_YN")
+
+BGCON_FPINFO_DATA.df <- merge(x = BGCON_FPINFO_DATA, y = SIU_CUST_YN.DF, by = "CLLT_FP_PRNO", all=TRUE)
+
+```
+
+##EDA 수행
+
+```{r}
+#install.packages("Amelia")
+suppressPackageStartupMessages({
+  require(Amelia)
+})
+
+missmap(BGCON_CLAIM_DATA, main="Missings Map", col=c("yellow", "black"), legend=FALSE)
+missmap(BGCON_CNTT_DATA, main="Missings Map", col=c("yellow", "black"), legend=FALSE)
+missmap(BGCON_CUST_DATA, main="Missings Map", col=c("yellow", "black"), legend=FALSE) 
+missmap(BGCON_FMLY_DATA, main="Missings Map", col=c("yellow", "black"), legend=FALSE)
+missmap(BGCON_FPINFO_DATA, main="Missings Map", col=c("yellow", "black"), legend=FALSE)
+
+#### column 별 Missing Data 갯수 출력해주는 함수
+print_missing_count <- function(df){
+  for (name in colnames(df)){
+    cat(name, "(", class(df[, name]), ")" , "=====================\t",  sum(is.na(df[, name])))
+    cat("\n")
+  }
+}
+print_missing_count(BGCON_CLAIM_DATA)
+print_missing_count(BGCON_CNTT_DATA)
+print_missing_count(BGCON_CUST_DATA)
+print_missing_count(BGCON_FMLY_DATA)
+print_missing_count(BGCON_FPINFO_DATA)
+
+```
+
+  * 실효년월(LAPS_YM) 이 대부분 비어 있음
+  * 소멸년월(EXTN_YM) 많이 비어 있음
+  * FP와 고객간의거리(DISTANCE)는 일부 비어 있음
+
+  * MAXCRDT, MINCRDT는 중요한 factor로 보이지만 많은 데이터가 비어 있음
+
+```{r}
+#install.packages("Hmisc")
+suppressPackageStartupMessages({
+  library(Hmisc)
+})
+
+names(BGCON_CLAIM_DATA.df)
+
+summary(SIU_CUST_YN ~ ACCI_OCCP_GRP1 + ACCI_OCCP_GRP2 + CHANG_FP_YN + CRNT_PROG_DVSN + ACCI_DVSN + DMND_RESN_CODE + DMND_RSCD_SQNO + VLID_HOSP_OTDA + HOUSE_HOSP_DIST + ACCI_HOSP_ADDR + HOSP_SPEC_DVSN + DMND_AMT + PAYM_AMT + PMMI_DLNG_YN + SELF_CHAM + NON_PAY + TAMT_SFCA + PATT_CHRG_TOTA + DSCT_AMT + COUNT_TRMT_ITEM + NON_PAY_RATIO + HEED_HOSP_YN, data = BGCON_CLAIM_DATA.df, method="reverse")
+
+```
+
+
+  * CLAIM 데이터의 경우, 보험처리건수로 여러개일 수 있기 때문에 중복 집계될 가능성이 높음
+  * 좀더 정확히 보기 위해, 보험처리건수별 아이디 한개로 제한해서 테스트 해야함
+
+  * 직업그룹코드1(ACCI_OCCP_GRP1)
+    * 1.주부인 경우 6% 더 높음
+    * 자영업 경우 6% 더 높음
+    * 서비스직인 경우 3% 더 높음
+    * 전문직인 경우 3% 더 낮음
+    * 제조업인 경우 3% 더 낮음
+  
+  * 직업그룹코드2(ACCI_OCCP_GRP2)
+    * 3차산업 종사자 경우 5% 더 높음
+    * 1차산업종사자 1%, 2차산업종사자 3% 더 낮음
+    * 자영업 경우 5% 더 높음
+    * 주부 경우 6% 더 높음
+    * 법무직 종사자의 경우 사기건수 미존재
+    * 고소득 전문직의 경우 사기건수 미존재
+  
+  * 청구사유 코드(DMND_RESN_CODE)
+    * 02(입원)이 유의미하게 높음 23%
+    * 대신 수술(05)는 절반정도 낮음
+  
+  * 실소처리여부(PMMI_DLNG_YN)은 현격하게 낮음 15%
+  
+  * 금감원 유의병원 대상(HEED_HOSP_YN)유의 병원인 경우가 2%더 높음
+  
+  * 병원종별구분(HOSP_SPEC_DVSN)에서
+    * 한방병원(80) 8%, 의료기관이외(95) 7%로 유의미 하게 높음
+    * 종합병원(10) 20%로 유의미 하게 낮음
+  
+  * 유효입원/통원일수(VLID_HOSP_OTDA) 최소, 평균, 최대 모두 높게 나옴
+
+  * 뉴스기사 : 지난해 보험사기 적발 6549억원…사상 최대
+    * 위 뉴스기사와 비슷한 결과를 보이는 factor들이 많이 존재
+    * 주부, 자영업의 직업군 영향이 높
+  
+  
+```{r}
+  
+summary(SIU_CUST_YN ~ ., data = BGCON_CUST_DATA.df, method="reverse")
+  
+```
+
+  * FP경력(FP_CAREER)이 5% 더 높음 하지만, 모수가 많지 않음
+
+  * 신용등급_최소(MINCRDT)의 경우 7등급 이하의 하위가 더 높음
+  * 신용등급_최대(MAXCRDT)의 경우 7등급 이하의 하위가 더 높음
+
+  * 결혼여부(WEDD_YN) 결혼한 경우가 4% 더 높음
+
+  * FMLY_RELN_CODE 형제 자매의 관계에서 사기로 분류된 경우가 많음, 가족 아이디로 엮인 부분이 더 많음
+
+```{r}
+
+summary(SIU_CUST_YN ~ CUST_ROLE + IRKD_CODE_DTAL + IRKD_CODE_ITEM + GOOD_CLSF_CDNM + REAL_PAYM_TERM + SALE_CHNL_CODE + CNTT_STAT_CODE + PAYM_CYCL_CODE + MAIN_INSR_AMT + SUM_ORIG_PREM + RECP_PUBL + CNTT_RECP + MNTH_INCM_AMT + DISTANCE + INCB_DVSN + BEFO_JOB + EDGB + BRCH_CODE, data = BGCON_CNTT_DATA.df, method="reverse")
+
+```
+
+
+##상관분석
+
+
+```{r}
+# 상관분석
+#install.packages("corrgram")
+#install.packages("plyr")
+#install.packages("caret")
+suppressPackageStartupMessages({
+  require(corrgram)
+  require(plyr)
+  require(caret)
+})
+
+# 데이터 셋 reduce
+set.seed(1234)
+BGCON_CLAIM_DATA.df.down <- downSample(x = BGCON_CLAIM_DATA.df, y = BGCON_CLAIM_DATA.df$SIU_CUST_YN)
+set.seed(1234)
+BGCON_CNTT_DATA.df.down <- downSample(x = BGCON_CNTT_DATA.df, y = BGCON_CNTT_DATA.df$SIU_CUST_YN)
+set.seed(1234)
+BGCON_CUST_DATA.df.down <- downSample(x = BGCON_CUST_DATA.df, y =  BGCON_CUST_DATA.df$SIU_CUST_YN)
+set.seed(1234)
+BGCON_FMLY_DATA.df.down <- downSample(x = BGCON_FMLY_DATA.df, y =  BGCON_FMLY_DATA.df$SIU_CUST_YN)
+set.seed(1234)
+BGCON_FPINFO_DATA.df.down <- downSample(x = BGCON_FPINFO_DATA.df, y =  BGCON_FPINFO_DATA.df$SIU_CUST_YN)
+
+
+
+#####BGCON_CLAIM_DATA.df
+corrgram.data <- BGCON_CLAIM_DATA.df.down
+names(corrgram.data)
+
+## change features of factor type to numeric type for inclusion on correlogram
+corrgram.data$SIU_CUST_YN <- as.numeric(corrgram.data$SIU_CUST_YN)
+corrgram.data$ACCI_OCCP_GRP1 <- as.numeric(corrgram.data$ACCI_OCCP_GRP1)
+corrgram.data$ACCI_OCCP_GRP2 <- as.numeric(corrgram.data$ACCI_OCCP_GRP2)
+corrgram.data$CHANG_FP_YN <- as.numeric(corrgram.data$CHANG_FP_YN)
+corrgram.data$ACCI_DVSN <- as.numeric (corrgram.data$ACCI_DVSN)
+corrgram.data$CAUS_CODE <- as.numeric (corrgram.data$CAUS_CODE)
+corrgram.data$CAUS_CODE_DTAL <- as.numeric (corrgram.data$CAUS_CODE_DTAL)
+corrgram.data$RESL_CD1 <- as.numeric (corrgram.data$RESL_CD1)
+corrgram.data$RESL_NM1 <- as.numeric (corrgram.data$RESL_NM1)
+corrgram.data$ACCI_HOSP_ADDR <- as.numeric (corrgram.data$ACCI_HOSP_ADDR)
+corrgram.data$PMMI_DLNG_YN <- as.numeric (corrgram.data$PMMI_DLNG_YN)
+corrgram.data$HEED_HOSP_YN <- as.numeric (corrgram.data$HEED_HOSP_YN)
+corrgram.data$CAUS_CODE_FIRST <- as.numeric (factor(corrgram.data$CAUS_CODE_FIRST))
+corrgram.data$RESL_CD1_FIRST <- as.numeric (factor(corrgram.data$RESL_CD1_FIRST))
+
+## generate correlogram : 피어슨 상관계수 계산
+corrgram.vars <- c("SIU_CUST_YN", "ACCI_OCCP_GRP1", "ACCI_OCCP_GRP2", "CHANG_FP_YN", "ACCI_DVSN", "CNTT_RECP_SQNO", "RECP_DATE", "ORIG_RESN_DATE", "RESN_DATE","CRNT_PROG_DVSN","ACCI_DVSN","CAUS_CODE","CAUS_CODE_DTAL")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+corrgram.vars <- c("SIU_CUST_YN", "DSAS_NAME", "DMND_RESN_CODE", "DMND_RSCD_SQNO", "HOSP_OTPA_STDT", "HOSP_OTPA_ENDT", "RESL_CD1", "RESL_NM1","VLID_HOSP_OTDA","HOUSE_HOSP_DIST","HOSP_CODE","ACCI_HOSP_ADDR")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+corrgram.vars <- c("SIU_CUST_YN", "HOSP_SPEC_DVSN", "CHME_LICE_NO", "PAYM_DATE", "DMND_AMT", "PAYM_AMT", "PMMI_DLNG_YN")
+#, "SELF_CHAM", "NON_PAY", "TAMT_SFCA","PATT_CHRG_TOTA","DSCT_AMT") #표준편차 0으로 에러 발생
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+corrgram.vars <- c("SIU_CUST_YN", "DCAF_CMPS_XCPA", "COUNT_TRMT_ITEM", "NON_PAY_RATIO", "HEED_HOSP_YN")
+#, "DCAF_CMPS_XCPA", "NON_PAY_RATIO", "HEED_HOSP_YN", "SUB_CUST_ID", "FMLY_RELN_CODE") #표준편차 0으로 에러 발생
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+
+#### 추가분
+corrgram.vars <- c("SIU_CUST_YN", "RECP_DATE_YEAR", "ORIG_RESN_DATE_YEAR", "RESN_DATE_YEAR", "PAYM_DATE_YEAR", "CAUS_CODE_FIRST", "RESL_CD1_FIRST")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+
+
+#####BGCON_CUST_DATA.df
+corrgram.data <- BGCON_CUST_FMLY_DATA.df.down
+names(corrgram.data)
+
+## change features of factor type to numeric type for inclusion on correlogram
+corrgram.data$SIU_CUST_YN <- as.numeric(corrgram.data$SIU_CUST_YN)
+corrgram.data$FP_CAREER <- as.numeric(corrgram.data$FP_CAREER)
+corrgram.data$CTPR <- as.numeric(corrgram.data$CTPR)
+corrgram.data$OCCP_GRP_1 <- as.numeric (corrgram.data$OCCP_GRP_1)
+corrgram.data$OCCP_GRP_2 <- as.numeric (corrgram.data$OCCP_GRP_2)
+corrgram.data$WEDD_YN <- as.numeric (corrgram.data$WEDD_YN)
+corrgram.data$MATE_OCCP_GRP_1 <- as.numeric (corrgram.data$MATE_OCCP_GRP_1)
+corrgram.data$MATE_OCCP_GRP_2 <- as.numeric (corrgram.data$MATE_OCCP_GRP_2)
+
+
+## generate correlogram : 피어슨 상관계수 계산
+corrgram.vars <- c("SIU_CUST_YN",  "SEX",  "AGE",  "RESI_COST", "CTPR", "OCCP_GRP_1", "OCCP_GRP_2", "TOTALPREM")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+
+corrgram.vars <- c("SIU_CUST_YN", "MINCRDT", "MAXCRDT", "WEDD_YN", "MATE_OCCP_GRP_1", "MATE_OCCP_GRP_2", "CHLD_CNT", "LTBN_CHLD_AGE", "MAX_PAYM_YM", "MAX_PRM", "CUST_INCM", "RCBASE_HSHD_INCM", "JPBASE_HSHD_INCM", "FMLY_RELN_CODE")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+
+#### 추가분
+corrgram.vars <- c("SIU_CUST_YN", "CUST_RGST_YEAR", "MAX_PAYM_YM_YEAR")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+#### 요건 변수 추가분
+corrgram.vars <- c("SIU_CUST_YN", "VLID_HOSP_OTDA_TOTAL", "HOUSE_HOSP_DIST_TOTAL", "DMND_AMT_TOTAL", "PAYM_AMT_TOTAL", "SELF_CHAM_TOTAL", "NON_PAY_TOTAL", "TAMT_SFCA_TOTAL", "PATT_CHRG_TOTA_TOTAL", "DSCT_AMT_TOTAL", "COUNT_TRMT_ITEM_TOTAL", "REAL_PAYM_TERM_TOTAL", "MAIN_INSR_AMT_TOTAL", "SUM_ORIG_PREM_TOTAL", "MNTH_INCM_AMT_TOTAL")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+
+
+
+
+
+#####BGCON_CUST_DATA.df
+corrgram.data <- BGCON_CNTT_FPINFO_DATA.df.down
+names(corrgram.data)
+
+
+## change features of factor type to numeric type for inclusion on correlogram
+corrgram.data$SIU_CUST_YN <- as.numeric(corrgram.data$SIU_CUST_YN)
+corrgram.data$GOOD_CLSF_CDNM <- as.numeric(corrgram.data$GOOD_CLSF_CDNM)
+corrgram.data$CLLT_FP_PRNO <- as.numeric(corrgram.data$CLLT_FP_PRNO)
+corrgram.data$INCB_DVSN <- as.numeric(corrgram.data$INCB_DVSN)
+corrgram.data$ETRS_YM <- as.numeric(corrgram.data$ETRS_YM)
+corrgram.data$FIRE_YM <- as.numeric(corrgram.data$FIRE_YM)
+corrgram.data$BEFO_JOB <- as.numeric(corrgram.data$BEFO_JOB)
+corrgram.data$EDGB <- as.numeric(corrgram.data$EDGB)
+corrgram.data$BRCH_CODE <- as.numeric(corrgram.data$BRCH_CODE)
+
+## generate correlogram : 피어슨 상관계수 계산
+corrgram.vars <- c("SIU_CUST_YN", "POLY_NO", "CUST_ROLE", "IRKD_CODE_DTAL", "IRKD_CODE_ITEM", "GOOD_CLSF_CDNM", "CNTT_YM", "CLLT_FP_PRNO", "REAL_PAYM_TERM", "SALE_CHNL_CODE", "CNTT_STAT_CODE", "EXPR_YM")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+
+## generate correlogram : 피어슨 상관계수 계산
+corrgram.vars <- c("SIU_CUST_YN", "CLLT_FP_PRNO", "INCB_DVSN", "ETRS_YM", "FIRE_YM", "BEFO_JOB", "EDGB", "BRCH_CODE")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+
+#### 추가분
+corrgram.vars <- c("SIU_CUST_YN", "CNTT_YM_YEAR", "EXPR_YM_YEAR", "EXTN_YM_YEAR", "LAPS_YM_YEAR", "ETRS_YM_YEAR", "FIRE_YM_YEAR")
+corrgram(corrgram.data[,corrgram.vars], order=FALSE, lower.panel=panel.conf, upper.panel=panel.pie, text.panel=panel.txt, main="coefficient")
+
+```
+
+
+  * 데이터가 많기 때문에 p-value 계산으로 볼때 0.06 이상은 귀무가설 기각
+  * 상관분석에서 유의미하게 본 데이터들이 correlation이 높게 나옴
