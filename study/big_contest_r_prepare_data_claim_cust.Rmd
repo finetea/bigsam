@@ -60,8 +60,11 @@ BGCON_CLAIM_DATA$RESL_CD1_FIRST <- substring(BGCON_CLAIM_DATA$RESL_CD1, 1, 1)
 #t_col_name : df_from에서 가져오려 column 명
 #c_col_name : 만들려는 column 이름
 #by_col_name : merge 하기위해서 기준이 되는 column 명
+sum2 <- function(x) {
+  sum(as.numeric(x))
+}
 merge_after_aggregate <- function(df_from, df_to, by_col_name, t_col_name, c_col_name){
-  agg_df_temp <- aggregate(df_from[, t_col_name], by=list(df_from[, by_col_name]), FUN=sum)
+  agg_df_temp <- aggregate(df_from[, t_col_name], by=list(df_from[, by_col_name]), FUN=sum2)
   colnames(agg_df_temp) <- c(by_col_name, c_col_name)
   ret_df <- merge(x = df_to, y = agg_df_temp, by = by_col_name, all=TRUE)
   return (ret_df)
